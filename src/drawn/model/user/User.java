@@ -10,10 +10,18 @@ public abstract class User {
     private String email;
 
     protected User(String id, String username, String name, String email) {
+        this(id, username, name, email, false);
+    }
+
+    protected User(String id, String username, String name) {
+        this(id, username, name, null, true);
+    }
+
+    protected User(String id, String username, String name, String email, boolean optionalEmail) {
         this.id = requireText(id, "User ID");
         this.username = requireText(username, "Username");
         this.name = requireText(name, "Name");
-        this.email = requireEmail(email);
+        this.email = optionalEmail ? (email == null ? null : requireEmail(email)) : requireEmail(email);
     }
 
     public final String getId() {

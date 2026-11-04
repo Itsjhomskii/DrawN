@@ -2,13 +2,13 @@
 
 **Tagline:** From drawing to doing.
 
-DrawN is a console-based Java project for managing event bookings, bookable spaces, public-event tickets, manual payment verification, and customer support.
+DrawN is a console-based Java project for event listings and ticket reservations, with customer registration and a simulated wallet.
 
 ## Development status
 
-The project is being built incrementally. The current console app has a login screen, lets an admin add and list events, and lets customers browse events and reserve tickets. Event data and reservations are kept in memory for the current run. Venue booking, payment verification, support, and persistent storage are planned for later phases.
+The console app supports customer registration by email or Philippine phone number, contact-based login, age-derived organizer levels, and an initial wallet deposit. Customer accounts and wallet transactions are saved under `data/` as CSV files. Event data and reservations remain in memory for the current run. Venue booking, payment verification, and support are planned for later phases.
 
-Demo logins: customer `jhomskii` / `123`; admin `admin` / `234`.
+Demo admin login: `admin` / `234`. Customer accounts are created through registration. Customer passwords are stored as entered in `data/accounts.csv`, as requested for this version.
 
 ## Requirements
 
