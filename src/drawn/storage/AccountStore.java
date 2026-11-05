@@ -102,6 +102,52 @@ public final class AccountStore {
         }
     }
 
+    public synchronized void charge(Account account, BigDecimal amount, String reference) throws IOException {
+        changeBalance(account, amount, reference, false);
+    }
+
+    public synchronized void refund(Account account, BigDecimal amount, String reference) throws IOException {
+        changeBalance(account, amount, reference, true);
+    }
+
+    private void changeBalance(Account account, BigDecimal amount, String reference, boolean refund) throws IOException {
+        if (amount == null || amount.signum() <= 0 || amount.scale() > 2 || reference == null || reference.isBlank())
+            throw new IllegalArgumentException("Invalid wallet transaction.");
+        List<String> oldTransactions = readLines(transactionsFile);
+        String transactionType = (refund ? "REFUND:" : "PAYMENT:") + reference;
+        for (int i = 1; i < oldTransactions.size(); i++) {
+            if (oldTransactions.get(i).isBlank()) continue;
+            List<String> fields = parseCsv(oldTransactions.get(i));
+            if (fields.size() == 5 && fields.get(0).equals(account.getId()) && fields.get(1).equals(transactionType))
+                throw new IllegalArgumentException("Duplicate wallet transaction.");
+        }
+        List<Account> storedAccounts = loadAccounts();
+        Account stored = storedAccounts.stream().filter(item -> item.getId().equals(account.getId())).findFirst()
+                .orElseThrow(() -> new IllegalArgumentException("Account not found."));
+        BigDecimal balance = stored.getWalletBalance();
+        BigDecimal next;
+        if (refund) next = balance.add(amount);
+        else {
+            if (balance.compareTo(amount) < 0) throw new IllegalArgumentException("Insufficient wallet balance.");
+            next = balance.subtract(amount);
+        }
+        List<String> oldAccounts = readLines(accountsFile);
+        try {
+            stored.setWalletBalance(next);
+            writeAccounts(storedAccounts);
+            List<String> rows = new ArrayList<>(oldTransactions);
+            if (rows.isEmpty()) rows.add(TRANSACTION_HEADER);
+            rows.add(csv(account.getId(), transactionType, amount.toPlainString(), next.toPlainString(),
+                    LocalDateTime.now().toString()));
+            writeLines(transactionsFile, rows);
+            account.setWalletBalance(next);
+        } catch (IOException ex) {
+            restore(accountsFile, oldAccounts);
+            restore(transactionsFile, oldTransactions);
+            throw ex;
+        }
+    }
+
     public synchronized List<Transaction> loadTransactions(String accountId) throws IOException {
         List<String> lines = readLines(transactionsFile);
         List<Transaction> result = new ArrayList<>();
