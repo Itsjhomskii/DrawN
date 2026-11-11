@@ -77,6 +77,7 @@ public final class DrawN {
     }
 
     private void run() {
+<<<<<<< HEAD
         try {
             paymentService.recoverPending();
             publishingService.recoverPending();
@@ -88,13 +89,16 @@ public final class DrawN {
         System.out.println("========================================");
         System.out.println("  DrawN - Event Management & Ticketing");
         System.out.println("========================================");
+=======
+        printBrandBanner();
+>>>>>>> 1eaeef98f9dad5548d1d15f3dff9c00d0e162de0
 
         boolean running = true;
         while (running) {
-            System.out.println("\n--- DrawN ---");
-            System.out.println("1. Log in");
-            System.out.println("2. Register");
-            System.out.println("0. Exit");
+            printSectionHeader("Welcome");
+            printMenuItem("1", "Log in");
+            printMenuItem("2", "Register");
+            printMenuItem("0", "Exit");
             int choice = readInt("Choose an option: ", 0, 2);
             if (choice == 0) {
                 running = false;
@@ -145,7 +149,7 @@ public final class DrawN {
     }
 
     private void registerCustomer() {
-        System.out.println("\nCustomer Registration");
+        printSectionHeader("Customer Registration");
         String firstName = readRequiredText("First name: ");
         String lastName = readRequiredText("Last name: ");
         LocalDate dateOfBirth = readDateOfBirth();
@@ -235,9 +239,7 @@ public final class DrawN {
     }
 
     private BigDecimal readInitialFunding() {
-        System.out.println("\n================================");
-        System.out.println("       INITIAL WALLET SETUP");
-        System.out.println("================================\n");
+        printSectionHeader("Initial Wallet Setup");
         System.out.println("Minimum Initial Funding: PHP 500.00\n");
         while (true) {
             BigDecimal amount = readPrice("Enter your initial wallet amount: ");
@@ -309,19 +311,27 @@ public final class DrawN {
         boolean inMenu = true;
         while (inMenu) {
             showCustomerDashboard(account, customer);
-            System.out.println("\nCUSTOMER MENU");
-            System.out.println("1. My Profile");
-            System.out.println("2. Create Event");
-            System.out.println("3. My Events");
-            System.out.println("4. Venue Reservations");
-            System.out.println("5. Explore Events");
-            System.out.println("6. Buy Tickets");
-            System.out.println("7. My Tickets");
+            printSectionHeader("Customer Menu");
+            printMenuItem("1", "My Profile");
+            printMenuItem("2", "Create Event");
+            printMenuItem("3", "My Events");
+            printMenuItem("4", "Venue Reservations");
+            printMenuItem("5", "Explore Events");
+            printMenuItem("6", "Buy Tickets");
+            printMenuItem("7", "My Tickets");
             boolean organizerAccess = hasOrganizerAccess(customer);
+<<<<<<< HEAD
             if (organizerAccess) System.out.println("8. Organizer Management");
             System.out.println("9. Wallet & Transactions");
             System.out.println("0. Log Out");
             int choice = readInt("Enter your choice: ", 0, 9);
+=======
+            if (organizerAccess) printMenuItem("8", "Organizer Management");
+            printMenuItem("9", "Support Center");
+            printMenuItem("10", "Wallet & Transactions");
+            printMenuItem("0", "Log Out");
+            int choice = readInt("Enter your choice: ", 0, 10);
+>>>>>>> 1eaeef98f9dad5548d1d15f3dff9c00d0e162de0
 
             switch (choice) {
                 case 1 -> showProfile(account);
@@ -347,12 +357,9 @@ public final class DrawN {
     }
 
     private void showCustomerDashboard(AccountStore.Account account, Customer customer) {
-        System.out.println("\n========================================");
-        System.out.println("                 DrawN");
-        System.out.println("       EVENT ORGANIZING SYSTEM");
-        System.out.println("========================================");
+        printBrandBanner();
         System.out.println("Welcome, " + customer.getName() + "!");
-        System.out.println("\nACCOUNT OVERVIEW");
+        printSectionHeader("Account Overview");
         System.out.printf("Account Balance       : PHP %s%n", account.getWalletBalance().setScale(2).toPlainString());
         try {
             List<Event> ownedEvents = eventService.eventsFor(customer);
@@ -942,10 +949,10 @@ public final class DrawN {
     private void adminMenu() {
         boolean inMenu = true;
         while (inMenu) {
-            System.out.println("\nAdmin dashboard");
-            System.out.println("1. List events");
-            System.out.println("2. Add event");
-            System.out.println("0. Log out");
+            printSectionHeader("Admin Dashboard");
+            printMenuItem("1", "List events");
+            printMenuItem("2", "Add event");
+            printMenuItem("0", "Log out");
             int choice = readInt("Choose an option: ", 0, 2);
 
             switch (choice) {
@@ -967,7 +974,7 @@ public final class DrawN {
     }
 
     private void addEvent() {
-        System.out.println("\nAdd event");
+        printSectionHeader("Add Event");
         String name = readRequiredText("Event name: ");
         String date = readRequiredText("Date (for example, 2026-12-31): ");
         int capacity = readInt("Ticket capacity: ", 1, Integer.MAX_VALUE);
@@ -1034,6 +1041,29 @@ public final class DrawN {
         System.out.printf("Reserved %d ticket(s) for %s. Total: PHP %s.%n",
                 quantity, customerName, total.toPlainString());
         System.out.println("Payment verification is not available in this starter version.");
+    }
+
+    private void printBrandBanner() {
+        System.out.println();
+        System.out.println("+--------------------------------------------------+");
+        System.out.println("|  DDDD   RRRR    AAA   W   W  N   N              |");
+        System.out.println("|  D   D  R   R  A   A  W   W  NN  N              |");
+        System.out.println("|  D   D  RRRR   AAAAA  W W W  N N N              |");
+        System.out.println("|  D   D  R  R   A   A  W W W  N  NN              |");
+        System.out.println("|  DDDD   R   R  A   A   W W   N   N              |");
+        System.out.println("|                                                  |");
+        System.out.println("|          FROM DRAWING TO DOING                  |");
+        System.out.println("+--------------------------------------------------+");
+    }
+
+    private void printSectionHeader(String title) {
+        System.out.println();
+        System.out.println("+-- " + title.toUpperCase(java.util.Locale.ROOT) + " "
+                + "-".repeat(Math.max(0, 42 - title.length())) + "+");
+    }
+
+    private void printMenuItem(String number, String label) {
+        System.out.printf("| %-2s %-42s|%n", number + ".", label);
     }
 
     private String readRequiredText(String prompt) {
