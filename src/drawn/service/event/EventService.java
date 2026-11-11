@@ -151,10 +151,12 @@ public final class EventService {
 
     public void publish(Customer organizer, String eventId) throws IOException {
         Event event = owned(organizer, eventId);
-        if (event.approvalStatus() != EventApprovalStatus.APPROVED)
-            throw new IllegalArgumentException("Only approved events can be published.");
         if (event.approvalStatus() == EventApprovalStatus.PUBLISHED)
             throw new IllegalArgumentException("Event is already published.");
+        if (event.approvalStatus() != EventApprovalStatus.DRAFT && event.approvalStatus() != EventApprovalStatus.PENDING
+                && event.approvalStatus() != EventApprovalStatus.APPROVED)
+            throw new IllegalArgumentException("This event cannot be published in its current status.");
+        validateSubmittable(event, organizer);
         repository.updateStatus(eventId, EventApprovalStatus.PUBLISHED);
     }
 

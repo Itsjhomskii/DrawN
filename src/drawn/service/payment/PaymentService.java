@@ -67,8 +67,15 @@ public final class PaymentService {
     /** Customer self-service cancellation; refunds are recorded as separate ledger transactions. */
     public VenueReservation cancelReservation(Customer customer, AccountStore.Account account, String reservationId)
             throws IOException {
+        if (!account.getId().equals(customer.getId()))
+            throw new IllegalArgumentException("Reservation does not belong to this customer.");
+        return cancelReservation(account, reservationId);
+    }
+
+    /** Cancels a reservation owned by the supplied account; used by event cancellation recovery. */
+    public VenueReservation cancelReservation(AccountStore.Account account, String reservationId) throws IOException {
         VenueReservation current = reservations.findById(reservationId);
-        if (!current.organizerId().equals(customer.getId()) || !account.getId().equals(customer.getId()))
+        if (!current.organizerId().equals(account.getId()))
             throw new IllegalArgumentException("Reservation does not belong to this customer.");
         if (current.status() == BookingStatus.CANCELLED) throw new IllegalArgumentException("Reservation is already cancelled.");
         if (current.status() == BookingStatus.EXPIRED || current.status() == BookingStatus.DECLINED)

@@ -54,8 +54,9 @@ public final class EventServiceTest {
             assert service.eventsFor(other).isEmpty();
             assert service.publicApprovedEvents().isEmpty();
             assert VenueCatalog.all().size() == 10;
-            assert VenueCatalog.all().stream().filter(venue -> venue.type() == VenueType.NON_COMMERCIAL).count() == 5;
-            assert VenueCatalog.all().stream().filter(venue -> venue.type() == VenueType.COMMERCIAL).count() == 5;
+            assert VenueCatalog.all().stream().filter(venue -> venue.type() == VenueType.BOTH).count() == 6;
+            assert VenueCatalog.all().stream().filter(venue -> venue.type() == VenueType.COMMERCIAL).count() == 2;
+            assert VenueCatalog.all().stream().filter(venue -> venue.type() == VenueType.NON_COMMERCIAL).count() == 2;
             assert VenueCatalog.all().stream().allMatch(venue -> venue.capacity() > 0
                     && venue.hourlyRate().signum() > 0 && venue.morningRate().signum() > 0
                     && venue.afternoonRate().signum() > 0);
@@ -109,7 +110,8 @@ public final class EventServiceTest {
                     LocalTime.NOON, LocalTime.of(13, 0), 0, VenueCatalog.all().get(0), List.of())));
             expectIllegal(() -> service.saveDraft(owner, new EventDraft("Too many guests", "Description",
                     EventType.BIRTHDAY, EventPurpose.SOCIAL_GATHERING, EventVisibility.PUBLIC, TODAY,
-                    LocalTime.NOON, LocalTime.of(13,0), 51, VenueCatalog.all().get(0),List.of())));
+                    LocalTime.NOON, LocalTime.of(13,0), VenueCatalog.all().get(0).capacity() + 1,
+                    VenueCatalog.all().get(0), List.of())));
             expectIllegal(() -> service.saveDraft(owner, new EventDraft("Bad venue", "Description", EventType.CONCERT,
                     EventPurpose.SOCIAL_GATHERING, EventVisibility.PUBLIC, TODAY, LocalTime.NOON,
                     LocalTime.of(13, 0), 10, new Venue("Commercial venue", VenueType.COMMERCIAL), List.of())));

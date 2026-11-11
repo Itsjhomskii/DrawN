@@ -9,6 +9,7 @@ import drawn.model.payment.PaymentStatus;
 import drawn.model.payment.PaymentTransaction;
 import drawn.model.ticket.TicketPurchaseStatus;
 import drawn.model.user.Customer;
+import drawn.service.payment.PaymentService;
 import drawn.storage.AccountStore;
 import drawn.storage.EventRepository;
 import drawn.storage.PaymentRepository;
@@ -47,15 +48,11 @@ public final class EventCancellationService {
     public Event cancel(Customer organizer, String eventId) throws IOException {
         Event event=owned(organizer,eventId);
         validateCancelable(event);
-        String linkedReservationId=events.reservationId(eventId);
-        List<VenueReservation> related=reservations.findAll().stream()
-                .filter(r->r.eventId().equals(eventId)||r.id().equals(linkedReservationId)).toList();
-        if(related.stream().anyMatch(r->r.status()!=BookingStatus.CANCELLED&&r.status()!=BookingStatus.DECLINED&&r.status()!=BookingStatus.EXPIRED))
-            throw new IllegalArgumentException("Cancel the associated venue reservation before cancelling this event.");
         if(event.approvalStatus()!=EventApprovalStatus.CANCELLATION_PENDING){
             journal.begin("event-cancel:"+eventId,"EVENT_CANCELLATION",List.of(eventId,organizer.getId()));
             events.updateStatus(eventId,EventApprovalStatus.CANCELLATION_PENDING);
         }
+        cancelLinkedReservations(eventId, organizer.getId());
         finish(eventId,"event-cancel:"+eventId);
         return owned(organizer,eventId);
     }
@@ -63,13 +60,32 @@ public final class EventCancellationService {
     public void recoverPending() throws IOException {
         java.util.Set<String> blocked=new java.util.HashSet<>();
         for(Event event:events.findAll()) if(event.approvalStatus()==EventApprovalStatus.CANCELLATION_PENDING) {
-            try { finish(event.id(),"event-cancel:"+event.id()); }
+            try { cancelLinkedReservations(event.id(), event.organizerId()); finish(event.id(),"event-cancel:"+event.id()); }
             catch(ReconciliationRequiredException ex) { blocked.add(event.id()); }
         }
         for(TransactionJournal.Entry entry:journal.unfinished()) if(entry.kind().equals("EVENT_CANCELLATION")) {
             String eventId=entry.payload().get(0);if(blocked.contains(eventId))continue;
-            try { finish(eventId,entry.id()); }
+            try {
+                Event event = events.findAll().stream().filter(candidate -> candidate.id().equals(eventId)).findFirst().orElse(null);
+                if (event != null) cancelLinkedReservations(eventId, event.organizerId());
+                finish(eventId,entry.id());
+            }
             catch(ReconciliationRequiredException ex) { blocked.add(eventId); }
+        }
+    }
+
+    private void cancelLinkedReservations(String eventId, String organizerId) throws IOException {
+        String linkedReservationId=events.reservationId(eventId);
+        List<VenueReservation> related=reservations.findAll().stream()
+                .filter(r->r.eventId().equals(eventId)||r.id().equals(linkedReservationId)).toList();
+        if (related.isEmpty()) return;
+
+        AccountStore.Account account = accounts.findAccount(organizerId);
+        PaymentService paymentService = new PaymentService(accounts, reservations, payments, journal, events);
+        for (VenueReservation reservation : related) {
+            if (reservation.status() == BookingStatus.CANCELLED || reservation.status() == BookingStatus.DECLINED
+                    || reservation.status() == BookingStatus.EXPIRED) continue;
+            paymentService.cancelReservation(account, reservation.id());
         }
     }
 

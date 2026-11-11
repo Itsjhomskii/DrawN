@@ -94,6 +94,11 @@ public final class AccountStore {
         changeBalance(account, amount, reference, true);
     }
 
+    /** Credits an account for a non-refund settlement, such as a ticket cancellation fee. */
+    public synchronized void credit(Account account, BigDecimal amount, String reference) throws IOException {
+        changeBalance(account, amount, reference, true, "CREDIT:");
+    }
+
     public synchronized boolean hasWalletTransaction(String accountId, String type) throws IOException {
         List<String> rows = readLines(transactionsFile);
         for (int i = 1; i < rows.size(); i++) {
@@ -111,9 +116,13 @@ public final class AccountStore {
     }
 
     private void changeBalance(Account account, BigDecimal amount, String reference, boolean refund) throws IOException {
+        changeBalance(account, amount, reference, refund, refund ? "REFUND:" : "PAYMENT:");
+    }
+
+    private void changeBalance(Account account, BigDecimal amount, String reference, boolean refund, String transactionPrefix) throws IOException {
         if (amount == null || amount.signum() <= 0 || amount.scale() > 2 || reference == null || reference.isBlank())
             throw new IllegalArgumentException("Invalid wallet transaction.");
-        String transactionType = (refund ? "REFUND:" : "PAYMENT:") + reference;
+        String transactionType = transactionPrefix + reference;
         List<Account> storedAccounts = loadAccounts();
         Account stored = storedAccounts.stream().filter(item -> item.getId().equals(account.getId())).findFirst()
                 .orElseThrow(() -> new IllegalArgumentException("Account not found."));

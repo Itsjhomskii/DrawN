@@ -64,9 +64,9 @@ public final class Phase34WorkflowTest {
                     VenueCatalog.all().get(5),"Description"));
             VenueReservation pending=reservationService.request(owner,event,ReservationPricing.HOURLY);
             assert pending.status()==BookingStatus.PENDING;
-            assert pending.cost().compareTo(new BigDecimal("5000.00"))==0;
+            assert pending.cost().compareTo(VenueCatalog.all().get(5).hourlyRate().multiply(new BigDecimal("2")))==0;
             assert ReservationService.price(event,ReservationPricing.HALF_DAY_MORNING)
-                    .compareTo(new BigDecimal("10000.00"))==0;
+                    .compareTo(VenueCatalog.all().get(5).morningRate())==0;
             reservationService.approve(pending.id());
             VenueReservation confirmed=paymentService.payVenue(owner,ownerAccount,pending.id());
             assert confirmed.status()==BookingStatus.CONFIRMED&&confirmed.paymentStatus()==PaymentStatus.PAID;
@@ -76,7 +76,7 @@ public final class Phase34WorkflowTest {
                     LocalTime.of(10,10),LocalTime.of(10,11),1,VenueCatalog.all().get(4),
                     drawn.model.event.EventApprovalStatus.PENDING,LocalDateTime.now(),List.of());
             assert ReservationService.price(birthday,ReservationPricing.HALF_DAY_MORNING)
-                    .compareTo(new BigDecimal("4400.00"))==0;
+                    .compareTo(VenueCatalog.all().get(4).morningRate())==0;
             expectIllegal(()->ReservationService.validatePricing(LocalTime.of(13,0),LocalTime.of(15,0),ReservationPricing.HALF_DAY_MORNING));
             expectIllegal(()->eventService.saveDraft(owner,draft("Long description",EVENT_DATE,LocalTime.NOON,
                     LocalTime.of(13,0),10,VenueCatalog.all().get(0),"x".repeat(501))));
@@ -88,8 +88,8 @@ public final class Phase34WorkflowTest {
                     new BigDecimal("10.00"),new BigDecimal("20.00"),new BigDecimal("20.00")),"ok")));
 
             BigDecimal balanceAfterPayment=accounts.loadAccounts().stream().filter(a->a.getId().equals(owner.getId())).findFirst().orElseThrow().getWalletBalance();
-            assert balanceAfterPayment.compareTo(new BigDecimal("95000.00"))==0 : balanceAfterPayment;
-            assert ownerAccount.getWalletBalance().compareTo(new BigDecimal("95000.00"))==0;
+            assert balanceAfterPayment.compareTo(new BigDecimal("100000.00").subtract(pending.cost()))==0 : balanceAfterPayment;
+            assert ownerAccount.getWalletBalance().compareTo(new BigDecimal("100000.00").subtract(pending.cost()))==0;
             assert paymentService.history(owner).size()==1;
             expectIllegal(()->paymentService.payVenue(owner,ownerAccount,pending.id()));
             expectIllegal(()->publishing.publish(owner,event.id()));
@@ -129,7 +129,7 @@ public final class Phase34WorkflowTest {
             VenueReservation declined=reservationService.decline(pending.id(),"Schedule changed");
             assert declined.status()==BookingStatus.DECLINED&&declined.paymentStatus()==PaymentStatus.REFUNDED;
             BigDecimal balanceAfterDecline=accounts.loadAccounts().stream().filter(a->a.getId().equals(owner.getId())).findFirst().orElseThrow().getWalletBalance();
-            assert balanceAfterDecline.compareTo(new BigDecimal("97500.00"))==0 : balanceAfterDecline;
+            assert balanceAfterDecline.compareTo(new BigDecimal("100000.00").subtract(rejectedReservation.cost()))==0 : balanceAfterDecline;
             assert paymentService.history(owner).stream().anyMatch(tx->tx.status()==PaymentStatus.REFUNDED);
             assert publishing.publishedEvents().size()==1;
             expectIllegal(()->reservationService.decline(conflict.id()," "));

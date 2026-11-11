@@ -1,2 +1,3 @@
 id,eventId,organizerId,venueName,date,startTime,endTime,pricing,cost,status,paymentStatus,declineReason
-"9935337e-e354-4a83-a8b7-e958e7baa3d4","44e54cdf-1423-4635-963a-4b50cedeba75","agtotojhomar@gmail.com","Venue 5","2027-10-10","10:10","10:11","HALF_DAY_MORNING","4400.00","PENDING","UNPAID",""
+"9935337e-e354-4a83-a8b7-e958e7baa3d4","44e54cdf-1423-4635-963a-4b50cedeba75","agtotojhomar@gmail.com","Seda Atria","2027-10-10","10:10","10:11","HALF_DAY_MORNING","14000.00","CANCELLED","UNPAID",""
+"3a83a9c7-816a-446c-a81e-aa5823734133","","agtotojhomar@gmail.com","Seda Atria","2026-11-29","10:00","10:11","HOURLY","733.33","PENDING","UNPAID",""

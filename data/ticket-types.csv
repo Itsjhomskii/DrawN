@@ -1,1 +1,3 @@
-id,eventId,name,price,quantity,sold,salesDeadline
+id,eventId,name,description,price,quantity,sold,salesStart,salesDeadline
+"summer-sound-general-admission","sample-commercial-2027","General Admission","Access to the festival grounds and all standard performances.","500.00","200","20","2026-11-11T00:00","2027-01-31T23:59"
+"summer-sound-vip","sample-commercial-2027","VIP Pass","Priority entry and access to the VIP viewing area.","1000.00","50","0","2026-11-11T00:00","2027-01-31T23:59"

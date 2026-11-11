@@ -17,6 +17,7 @@ import drawn.storage.TicketRepository;
 import drawn.storage.TransactionJournal;
 import java.io.IOException;
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.LocalDateTime;
 import java.util.HashSet;
 import java.util.List;
@@ -27,6 +28,9 @@ import java.util.UUID;
 
 /** Optional organizer-owned publishing and ticket sales operations. */
 public final class EventPublishingService {
+    private static final BigDecimal TICKET_CANCELLATION_FEE_RATE = new BigDecimal("0.05");
+    private static final BigDecimal ADMIN_SHARE_OF_CANCELLATION_FEE = new BigDecimal("0.05");
+    private static final String ADMIN_LEDGER_ACCOUNT = "admin";
     private final EventRepository events;
     private final ReservationRepository reservations;
     private final TicketRepository tickets;
@@ -76,9 +80,11 @@ public final class EventPublishingService {
 
     public void publish(Customer organizer,String eventId)throws IOException{
         Event event=ownedEvent(organizer,eventId);
-        if(event.approvalStatus()!=drawn.model.event.EventApprovalStatus.APPROVED)
-            throw new IllegalArgumentException("Only approved events can be published.");
         if(tickets.isPublished(eventId))throw new IllegalArgumentException("Event is already published.");
+        if(event.approvalStatus()!=drawn.model.event.EventApprovalStatus.DRAFT
+                &&event.approvalStatus()!=drawn.model.event.EventApprovalStatus.PENDING
+                &&event.approvalStatus()!=drawn.model.event.EventApprovalStatus.APPROVED)
+            throw new IllegalArgumentException("This event cannot be published in its current status.");
         if(tickets.types(eventId).isEmpty())throw new IllegalArgumentException("Configure ticket categories before publishing.");
         tickets.publish(eventId,organizer.getId());
         events.updateStatus(eventId,drawn.model.event.EventApprovalStatus.PUBLISHED);
@@ -117,7 +123,39 @@ public final class EventPublishingService {
     }
 
     public List<String> purchaseHistory(Customer customer)throws IOException{return tickets.purchaseHistory(customer.getId());}
+    public List<TicketRepository.Purchase> purchases(Customer customer) throws IOException {
+        return tickets.allPurchaseRecords().stream().filter(purchase -> purchase.purchaserId().equals(customer.getId())).toList();
+    }
     public int activeTicketCount(Customer customer)throws IOException{return tickets.purchasedCount(customer.getId());}
+
+    public TicketCancellationQuote cancellationQuote(Customer purchaser, String purchaseId) throws IOException {
+        TicketRepository.Purchase purchase = ownedActivePurchase(purchaser, purchaseId);
+        return cancellationQuote(purchase);
+    }
+
+    private TicketCancellationQuote cancellationQuote(TicketRepository.Purchase purchase) {
+        BigDecimal fee = purchase.amount().multiply(TICKET_CANCELLATION_FEE_RATE).setScale(2, RoundingMode.HALF_UP);
+        BigDecimal adminShare = fee.multiply(ADMIN_SHARE_OF_CANCELLATION_FEE).setScale(2, RoundingMode.HALF_UP);
+        BigDecimal organizerShare = fee.subtract(adminShare);
+        return new TicketCancellationQuote(purchase, purchase.amount().subtract(fee), fee, organizerShare, adminShare);
+    }
+
+    public TicketCancellationQuote cancelTicket(Customer purchaser, AccountStore.Account account, String purchaseId) throws IOException {
+        if (!account.getId().equals(purchaser.getId())) throw new IllegalArgumentException("Account does not match purchaser.");
+        TicketCancellationQuote quote = cancellationQuote(purchaser, purchaseId);
+        Event event = event(quote.purchase().eventId());
+        if (!event.date().isAfter(java.time.LocalDate.now()))
+            throw new IllegalArgumentException("Tickets for past or current events cannot be cancelled.");
+        PaymentTransaction payment = payments.findAll().stream().filter(transaction -> transaction.referenceId().equals(purchaseId)
+                && transaction.customerId().equals(purchaser.getId()) && transaction.purpose() == PaymentPurpose.TICKET_RESERVATION
+                && (transaction.status() == PaymentStatus.PAID || transaction.status() == PaymentStatus.VERIFIED)
+                && transaction.amount().compareTo(quote.purchase().amount()) == 0).findFirst()
+                .orElseThrow(() -> new IllegalArgumentException("The original ticket payment could not be verified."));
+        String operation = "ticket-cancel:" + purchaseId;
+        journal.begin(operation, "TICKET_CANCELLATION", List.of(purchaseId));
+        completeTicketCancellation(quote, event, operation);
+        return quote;
+    }
 
     private void completeTicketPurchase(AccountStore.Account account,String purchaseId,String customerId,String eventId,
                                        String typeId,int quantity,BigDecimal amount,String transactionId,String operation)
@@ -133,12 +171,60 @@ public final class EventPublishingService {
     }
 
     public void recoverPending()throws IOException{
-        for(TransactionJournal.Entry entry:journal.unfinished())if(entry.kind().equals("TICKET_PURCHASE")){
-            List<String> p=entry.payload();AccountStore.Account account=accounts.findAccount(p.get(0));
-            completeTicketPurchase(account,entry.id().substring("ticket:".length()),p.get(0),p.get(1),p.get(2),
-                    Integer.parseInt(p.get(3)),new BigDecimal(p.get(4)),p.get(5),entry.id());
+        for(TransactionJournal.Entry entry:journal.unfinished()) {
+            if(entry.kind().equals("TICKET_PURCHASE")) {
+                List<String> p=entry.payload();AccountStore.Account account=accounts.findAccount(p.get(0));
+                completeTicketPurchase(account,entry.id().substring("ticket:".length()),p.get(0),p.get(1),p.get(2),
+                        Integer.parseInt(p.get(3)),new BigDecimal(p.get(4)),p.get(5),entry.id());
+            } else if (entry.kind().equals("TICKET_CANCELLATION")) {
+                String purchaseId = entry.payload().get(0);
+                TicketRepository.Purchase purchase = tickets.allPurchaseRecords().stream()
+                        .filter(candidate -> candidate.id().equals(purchaseId)).findFirst().orElse(null);
+                if (purchase != null && purchase.status() == drawn.model.ticket.TicketPurchaseStatus.ACTIVE) {
+                    TicketCancellationQuote quote = cancellationQuote(purchase);
+                    completeTicketCancellation(quote, event(purchase.eventId()), entry.id());
+                }
+            }
         }
     }
+
+    private void completeTicketCancellation(TicketCancellationQuote quote, Event event, String operation) throws IOException {
+        TicketRepository.Purchase purchase = quote.purchase();
+        AccountStore.Account buyer = accounts.findAccount(purchase.purchaserId());
+        AccountStore.Account organizer = accounts.findAccount(event.organizerId());
+        String refundReference = "ticket-cancellation:" + purchase.id();
+        String organizerReference = "ticket-cancellation-fee:" + purchase.id();
+        if (!accounts.hasWalletTransaction(buyer.getId(), "REFUND:" + refundReference))
+            accounts.refund(buyer, quote.refundAmount(), refundReference);
+        if (!accounts.hasWalletTransaction(organizer.getId(), "CREDIT:" + organizerReference))
+            accounts.credit(organizer, quote.organizerFee(), organizerReference);
+        String refundPaymentId = "ticket-cancel-refund:" + purchase.id();
+        String organizerFeePaymentId = "ticket-cancel-organizer-fee:" + purchase.id();
+        String adminFeePaymentId = "ticket-cancel-admin-fee:" + purchase.id();
+        if (!payments.hasTransaction(refundPaymentId)) payments.append(new PaymentTransaction(refundPaymentId, buyer.getId(),
+                purchase.id(), PaymentPurpose.TICKET_RESERVATION, quote.refundAmount(), PaymentStatus.REFUNDED, LocalDateTime.now()));
+        if (!payments.hasTransaction(organizerFeePaymentId)) payments.append(new PaymentTransaction(organizerFeePaymentId,
+                organizer.getId(), purchase.id(), PaymentPurpose.TICKET_CANCELLATION_FEE, quote.organizerFee(), PaymentStatus.PAID, LocalDateTime.now()));
+        if (!payments.hasTransaction(adminFeePaymentId)) payments.append(new PaymentTransaction(adminFeePaymentId,
+                ADMIN_LEDGER_ACCOUNT, purchase.id(), PaymentPurpose.TICKET_CANCELLATION_FEE, quote.adminFee(), PaymentStatus.PAID, LocalDateTime.now()));
+        if (purchase.status() != drawn.model.ticket.TicketPurchaseStatus.CANCELLED) {
+            tickets.updatePurchaseStatus(purchase.id(), drawn.model.ticket.TicketPurchaseStatus.CANCELLED);
+            tickets.reconcileSoldQuantity(purchase.eventId(), purchase.ticketTypeId());
+        }
+        journal.state(operation, "COMPLETED");
+    }
+
+    private TicketRepository.Purchase ownedActivePurchase(Customer purchaser, String purchaseId) throws IOException {
+        TicketRepository.Purchase purchase = tickets.allPurchaseRecords().stream().filter(candidate -> candidate.id().equals(purchaseId))
+                .findFirst().orElseThrow(() -> new IllegalArgumentException("Ticket purchase not found."));
+        if (!purchase.purchaserId().equals(purchaser.getId())) throw new IllegalArgumentException("Ticket purchase does not belong to this customer.");
+        if (purchase.status() != drawn.model.ticket.TicketPurchaseStatus.ACTIVE)
+            throw new IllegalArgumentException("Only active tickets can be cancelled.");
+        return purchase;
+    }
+
+    public record TicketCancellationQuote(TicketRepository.Purchase purchase, BigDecimal refundAmount, BigDecimal cancellationFee,
+                                          BigDecimal organizerFee, BigDecimal adminFee) { }
 
     private Event ownedEvent(Customer organizer,String id)throws IOException{
         Event event=events.findAll().stream().filter(e->e.id().equals(id)).findFirst().orElseThrow(()->new IllegalArgumentException("Event not found."));

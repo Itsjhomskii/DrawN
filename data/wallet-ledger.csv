@@ -1,0 +1,5 @@
+operationId,accountId,type,amount,balanceBefore,balanceAfter,timestamp
+"seed:agtotojhomar@gmail.com","agtotojhomar@gmail.com","SEED","10500.00","0","10500.00","2026-11-11T13:18:42.325210"
+"register:+639814133121","+639814133121","INITIAL_FUNDING","500000","0","500000","2026-11-11T13:26:29.341369500"
+"PAYMENT:ticket:34573943-3933-4cc6-8220-9a5f3f15c943:+639814133121","+639814133121","PAYMENT:ticket:34573943-3933-4cc6-8220-9a5f3f15c943","10000.00","500000","490000.00","2026-11-11T13:32:11.315972900"
+"topup:b4715630-223b-4bfe-8d69-3ffa8214ef6f","agtotojhomar@gmail.com","TOP_UP","10","10500.00","10510.00","2026-11-11T13:56:06.546437500"

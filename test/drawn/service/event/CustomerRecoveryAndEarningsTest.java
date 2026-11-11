@@ -130,6 +130,15 @@ public final class CustomerRecoveryAndEarningsTest {
             events.updateStatus(cancelEvent.id(), EventApprovalStatus.APPROVED);
             assert cancellationService.cancel(owner, cancelEvent.id()).approvalStatus() == EventApprovalStatus.CANCELLED;
             expectIllegal(() -> cancellationService.cancel(owner, cancelEvent.id()));
+            Event linkedCancellation = eventService.saveDraft(owner, draft("Linked cancellation", EventPurpose.SOCIAL_GATHERING));
+            events.updateStatus(linkedCancellation.id(), EventApprovalStatus.PENDING);
+            VenueReservation linkedReservation = new VenueReservation("linked-cancellation-reservation", linkedCancellation.id(),
+                    owner.getId(), linkedCancellation.venue().name(), EVENT_DAY, LocalTime.of(9, 0), LocalTime.of(11, 0),
+                    ReservationPricing.HOURLY, linkedCancellation.venue().hourlyRate().multiply(new BigDecimal("2")),
+                    BookingStatus.PENDING, PaymentStatus.UNPAID, "");
+            reservations.save(linkedReservation);
+            assert cancellationService.cancel(owner, linkedCancellation.id()).approvalStatus() == EventApprovalStatus.CANCELLED;
+            assert reservations.findById(linkedReservation.id()).status() == BookingStatus.CANCELLED;
             Event completed = new Event("completed", owner.getId(), "Past event", "Description", EventType.CONCERT,
                     EventPurpose.SOCIAL_GATHERING, EventVisibility.PRIVATE, TODAY.minusDays(1), LocalTime.of(9, 0),
                     LocalTime.of(11, 0), 10, VenueCatalog.all().get(0), EventApprovalStatus.APPROVED,
@@ -330,7 +339,9 @@ public final class CustomerRecoveryAndEarningsTest {
     }
     private static VenueReservation reservation(Customer owner, String id, String eventId, BookingStatus status,
                                                 PaymentStatus paymentStatus) {
-        return new VenueReservation(id, eventId, owner.getId(), VenueCatalog.all().get(5).name(), EVENT_DAY,
+        String venueName = VenueCatalog.all().stream()
+                .filter(venue -> venue.supports(EventPurpose.TICKETED_EVENT)).findFirst().orElseThrow().name();
+        return new VenueReservation(id, eventId, owner.getId(), venueName, EVENT_DAY,
                 LocalTime.of(9, 0), LocalTime.of(11, 0), ReservationPricing.HOURLY, new BigDecimal("50.00"),
                 status, paymentStatus, "");
     }
