@@ -83,7 +83,8 @@ public final class EventPublishingService {
         if(tickets.isPublished(eventId))throw new IllegalArgumentException("Event is already published.");
         if(event.approvalStatus()!=drawn.model.event.EventApprovalStatus.DRAFT
                 &&event.approvalStatus()!=drawn.model.event.EventApprovalStatus.PENDING
-                &&event.approvalStatus()!=drawn.model.event.EventApprovalStatus.APPROVED)
+                &&event.approvalStatus()!=drawn.model.event.EventApprovalStatus.APPROVED
+                &&event.approvalStatus()!=drawn.model.event.EventApprovalStatus.PUBLISHED)
             throw new IllegalArgumentException("This event cannot be published in its current status.");
         if(tickets.types(eventId).isEmpty())throw new IllegalArgumentException("Configure ticket categories before publishing.");
         tickets.publish(eventId,organizer.getId());
@@ -96,7 +97,6 @@ public final class EventPublishingService {
         Event event=events.findAll().stream().filter(e->e.id().equals(eventId)).findFirst().orElseThrow(()->new IllegalArgumentException("Event not found."));
         if(!tickets.isPublished(eventId))throw new IllegalArgumentException("Event is not published.");
         if(event.approvalStatus()!=drawn.model.event.EventApprovalStatus.PUBLISHED
-                ||event.visibility()!=drawn.model.event.EventVisibility.PUBLIC
                 ||event.purpose()!=drawn.model.event.EventPurpose.TICKETED_EVENT)
             throw new IllegalArgumentException("Tickets are not available for this event.");
         if(event.organizerId().equals(purchaser.getId()))throw new IllegalArgumentException("Organizers cannot purchase tickets to their own event.");

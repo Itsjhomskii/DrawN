@@ -57,8 +57,8 @@ public final class PaymentService {
         if (!ledger.hasTransaction(account.getId(), reservation.id(), PaymentPurpose.VENUE_BOOKING, PaymentStatus.PAID)
                 && !ledger.hasTransaction(paymentId)) ledger.append(new PaymentTransaction(paymentId, account.getId(),
                 reservation.id(), PaymentPurpose.VENUE_BOOKING, reservation.cost(), PaymentStatus.PAID, LocalDateTime.now()));
-        VenueReservation paid = reservation.withPayment(PaymentStatus.PAID).withStatus(BookingStatus.CONFIRMED, "");
-        if (reservation.paymentStatus() != PaymentStatus.PAID || reservation.status() != BookingStatus.CONFIRMED)
+        VenueReservation paid = reservation.withPayment(PaymentStatus.PAID).withStatus(BookingStatus.RESERVED, "");
+        if (reservation.paymentStatus() != PaymentStatus.PAID || reservation.status() != BookingStatus.RESERVED)
             reservations.update(paid);
         journal.state(operation, "COMPLETED");
         return paid;

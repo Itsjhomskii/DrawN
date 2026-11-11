@@ -87,7 +87,7 @@ public final class ReservationService {
         Event event = r.eventId().isBlank() ? null : eventById(r.eventId());
         for (VenueReservation other : reservations.findAll()) {
             if (other.id().equals(r.id()) || !other.venueName().equals(r.venueName()) || !other.date().equals(r.date())) continue;
-            if ((other.status() == BookingStatus.APPROVED || other.status() == BookingStatus.CONFIRMED)
+            if ((other.status() == BookingStatus.APPROVED || other.status() == BookingStatus.CONFIRMED || other.status() == BookingStatus.RESERVED)
                     && overlaps(r.startTime(), r.endTime(), other.startTime(), other.endTime()))
                 throw new IllegalArgumentException("Another approved reservation conflicts with this time.");
         }

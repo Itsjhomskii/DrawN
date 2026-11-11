@@ -1,2 +1,2 @@
 id,eventId,ticketTypeId,purchaserId,quantity,amount,timestamp,status
-"34573943-3933-4cc6-8220-9a5f3f15c943","sample-commercial-2027","summer-sound-general-admission","+639814133121","20","10000.00","2026-11-11T13:32:11.322501600","ACTIVE"
+"34573943-3933-4cc6-8220-9a5f3f15c943","sample-commercial-2027","summer-sound-general-admission","+639814133121","20","10000.00","2026-11-11T13:32:11.322501600","REFUNDED"

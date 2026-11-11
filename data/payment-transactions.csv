@@ -1,2 +1,7 @@
 id,customerId,referenceId,purpose,amount,status,timestamp
 "ticket-payment:34573943-3933-4cc6-8220-9a5f3f15c943","+639814133121","34573943-3933-4cc6-8220-9a5f3f15c943","TICKET_RESERVATION","10000.00","PAID","2026-11-11T13:32:11.329046100"
+"ticket-refund-payment:34573943-3933-4cc6-8220-9a5f3f15c943","+639814133121","34573943-3933-4cc6-8220-9a5f3f15c943","TICKET_RESERVATION","10000.00","REFUNDED","2026-11-11T16:00:12.122974"
+"venue-payment:approved-venue-test-2027","agtotojhomar@gmail.com","approved-venue-test-2027","VENUE_BOOKING","3000.00","PAID","2026-11-11T16:10:00"
+"venue-payment:3a83a9c7-816a-446c-a81e-aa5823734133","agtotojhomar@gmail.com","3a83a9c7-816a-446c-a81e-aa5823734133","VENUE_BOOKING","733.33","PAID","2026-11-11T16:21:00"
+"venue-payment:0e88ae80-fab9-40b1-80fb-d6a7db16aacc","agtotojhomar@gmail.com","0e88ae80-fab9-40b1-80fb-d6a7db16aacc","VENUE_BOOKING","132000.00","PAID","2026-11-11T16:22:00"
+"venue-payment:pending-venue-test-2027","agtotojhomar@gmail.com","pending-venue-test-2027","VENUE_BOOKING","7000.00","PAID","2026-11-11T16:23:00"

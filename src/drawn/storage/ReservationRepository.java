@@ -59,6 +59,14 @@ public final class ReservationRepository {
         write(rows);
     }
 
+    public synchronized void delete(String reservationId) throws IOException {
+        List<String> rows = read();
+        int index = find(rows, reservationId);
+        if (index < 0) throw new IllegalArgumentException("Reservation not found.");
+        rows.remove(index);
+        write(rows);
+    }
+
     public synchronized void attachEvent(String reservationId, String eventId, String organizerId) throws IOException {
         VenueReservation current = findById(reservationId);
         if (!current.organizerId().equals(organizerId)) throw new IllegalArgumentException("Reservation does not belong to this account.");

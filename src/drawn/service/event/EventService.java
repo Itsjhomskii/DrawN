@@ -183,7 +183,8 @@ public final class EventService {
                 .findFirst().orElseThrow(() -> new IllegalArgumentException("An associated reservation is required."));
         if (!reservation.organizerId().equals(organizer.getId()) || !reservation.eventId().equals(event.id()))
             throw new IllegalArgumentException("The reservation must belong to this customer and event.");
-        boolean approved = reservation.status() == BookingStatus.APPROVED || reservation.status() == BookingStatus.CONFIRMED;
+        boolean approved = reservation.status() == BookingStatus.APPROVED || reservation.status() == BookingStatus.CONFIRMED
+                || reservation.status() == BookingStatus.RESERVED;
         if (!approved || (reservation.paymentStatus() != PaymentStatus.PAID
                 && reservation.paymentStatus() != PaymentStatus.VERIFIED))
             throw new IllegalArgumentException("The associated reservation must be approved and fully paid.");
@@ -202,7 +203,8 @@ public final class EventService {
         for (VenueReservation other : reservations.findAll()) {
             if (other.id().equals(reservation.id()) || !other.venueName().equals(reservation.venueName())
                     || !other.date().equals(reservation.date())) continue;
-            boolean active = other.status() == BookingStatus.APPROVED || other.status() == BookingStatus.CONFIRMED;
+            boolean active = other.status() == BookingStatus.APPROVED || other.status() == BookingStatus.CONFIRMED
+                    || other.status() == BookingStatus.RESERVED;
             boolean overlaps = reservation.startTime().isBefore(other.endTime())
                     && other.startTime().isBefore(reservation.endTime());
             if (active && overlaps) throw new IllegalArgumentException("The reservation conflicts with another approved booking.");

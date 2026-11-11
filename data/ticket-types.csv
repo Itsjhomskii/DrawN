@@ -1,3 +1,6 @@
 id,eventId,name,description,price,quantity,sold,salesStart,salesDeadline
-"summer-sound-general-admission","sample-commercial-2027","General Admission","Access to the festival grounds and all standard performances.","500.00","200","20","2026-11-11T00:00","2027-01-31T23:59"
+"summer-sound-general-admission","sample-commercial-2027","General Admission","Access to the festival grounds and all standard performances.","500.00","200","0","2026-11-11T00:00","2027-01-31T23:59"
 "summer-sound-vip","sample-commercial-2027","VIP Pass","Priority entry and access to the VIP viewing area.","1000.00","50","0","2026-11-11T00:00","2027-01-31T23:59"
+"b6fe3880-cab9-49f9-adc6-95d7d05e54fd","f0a521f9-b305-4a33-aa61-ca987cfd9594","General","General ticket","10","10","0","2026-11-11T16:30:48.674190400","2027-03-15T09:59"
+"75009736-6056-486c-b5b0-6edd1a718cb1","8d8cd63d-a55f-4ae0-b9da-89dfc2718433","General","General ticket","100","500","0","2026-11-11T16:51:15.244326700","2027-11-29T09:59"
+"4d5a6d8d-7429-4958-bd78-104f13e15d86","8d8cd63d-a55f-4ae0-b9da-89dfc2718433","VIP","VIP ticket","1000","500","0","2026-11-11T16:51:15.244326700","2027-11-29T09:59"

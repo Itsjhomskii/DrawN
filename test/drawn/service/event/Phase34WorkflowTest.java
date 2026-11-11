@@ -69,7 +69,7 @@ public final class Phase34WorkflowTest {
                     .compareTo(VenueCatalog.all().get(5).morningRate())==0;
             reservationService.approve(pending.id());
             VenueReservation confirmed=paymentService.payVenue(owner,ownerAccount,pending.id());
-            assert confirmed.status()==BookingStatus.CONFIRMED&&confirmed.paymentStatus()==PaymentStatus.PAID;
+            assert confirmed.status()==BookingStatus.RESERVED&&confirmed.paymentStatus()==PaymentStatus.PAID;
             assert eventService.submitDraft(owner,event.id()).approvalStatus()==drawn.model.event.EventApprovalStatus.PENDING;
             Event birthday=new Event("birthday",owner.getId(),"Birthday","Private gathering",EventType.BIRTHDAY,
                     drawn.model.event.EventPurpose.SOCIAL_GATHERING,drawn.model.event.EventVisibility.PRIVATE,EVENT_DATE,
