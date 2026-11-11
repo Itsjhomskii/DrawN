@@ -86,6 +86,53 @@ public final class EventService {
         return event;
     }
 
+    /**
+     * Customer-facing event creation.  Unlike the legacy draft APIs retained for old records,
+     * this writes an event only after the caller has collected and confirmed every detail.
+     */
+    public Event createPublishedForApprovedReservation(Customer organizer, EventDraft draft, String reservationId)
+            throws IOException {
+        validateDraft(organizer, draft);
+        if (draft.purpose() == EventPurpose.TICKETED_EVENT && draft.ticketCategories().isEmpty())
+            throw new IllegalArgumentException("Commercial events need at least one ticket category.");
+        if (reservations == null || payments == null)
+            throw new IllegalStateException("Reservation validation is not configured.");
+
+        VenueReservation reservation = reservations.findById(reservationId);
+        validateReservationForNewEvent(organizer, draft, reservation);
+        Event event = new Event(UUID.randomUUID().toString(), organizer.getId(), draft.name(), draft.description(),
+                draft.type(), draft.purpose(), draft.visibility(), draft.date(), draft.startTime(), draft.endTime(),
+                draft.expectedAttendance(), draft.venue(), EventApprovalStatus.PUBLISHED, LocalDateTime.now(clock),
+                draft.ticketCategories());
+        boolean saved = false;
+        try {
+            repository.save(event);
+            saved = true;
+            repository.linkReservation(event.id(), reservation.id());
+            reservations.attachEvent(reservation.id(), event.id(), organizer.getId());
+            return event;
+        } catch (IOException | RuntimeException ex) {
+            // The reservation payment belongs to the venue request, not to an unfinished event.
+            // Undo only the event/link work so the approved reservation remains available.
+            if (saved) {
+                try { repository.delete(event.id()); }
+                catch (IOException | RuntimeException rollbackFailure) { ex.addSuppressed(rollbackFailure); }
+            }
+            throw ex;
+        }
+    }
+
+    /** Compensates a failed customer creation before the event becomes available to buyers. */
+    public void discardFailedCustomerCreation(Customer organizer, String eventId, String reservationId) throws IOException {
+        Event event = owned(organizer, eventId);
+        if (tickets != null) tickets.discardUnpurchasedEvent(eventId);
+        if (reservations != null) {
+            VenueReservation reservation = reservations.findById(reservationId);
+            if (reservation.eventId().equals(eventId)) reservations.detachEvent(reservationId, organizer.getId());
+        }
+        repository.delete(event.id());
+    }
+
     public Event submitDraft(Customer organizer, String eventId) throws IOException {
         Event event = owned(organizer, eventId);
         if (event.approvalStatus() != EventApprovalStatus.DRAFT && event.approvalStatus() != EventApprovalStatus.REJECTED)
@@ -183,8 +230,7 @@ public final class EventService {
                 .findFirst().orElseThrow(() -> new IllegalArgumentException("An associated reservation is required."));
         if (!reservation.organizerId().equals(organizer.getId()) || !reservation.eventId().equals(event.id()))
             throw new IllegalArgumentException("The reservation must belong to this customer and event.");
-        boolean approved = reservation.status() == BookingStatus.APPROVED || reservation.status() == BookingStatus.CONFIRMED
-                || reservation.status() == BookingStatus.RESERVED;
+        boolean approved = reservation.status() == BookingStatus.APPROVED || reservation.status() == BookingStatus.CONFIRMED;
         if (!approved || (reservation.paymentStatus() != PaymentStatus.PAID
                 && reservation.paymentStatus() != PaymentStatus.VERIFIED))
             throw new IllegalArgumentException("The associated reservation must be approved and fully paid.");
@@ -203,8 +249,7 @@ public final class EventService {
         for (VenueReservation other : reservations.findAll()) {
             if (other.id().equals(reservation.id()) || !other.venueName().equals(reservation.venueName())
                     || !other.date().equals(reservation.date())) continue;
-            boolean active = other.status() == BookingStatus.APPROVED || other.status() == BookingStatus.CONFIRMED
-                    || other.status() == BookingStatus.RESERVED;
+            boolean active = other.status() == BookingStatus.APPROVED || other.status() == BookingStatus.CONFIRMED;
             boolean overlaps = reservation.startTime().isBefore(other.endTime())
                     && other.startTime().isBefore(reservation.endTime());
             if (active && overlaps) throw new IllegalArgumentException("The reservation conflicts with another approved booking.");
@@ -229,6 +274,9 @@ public final class EventService {
         Objects.requireNonNull(draft.endTime(), "Event end time is required.");
         if (!draft.endTime().isAfter(draft.startTime())) throw new IllegalArgumentException("End time must be later than start time.");
         if (draft.expectedAttendance() <= 0) throw new IllegalArgumentException("Expected attendance must be a positive number.");
+        // Basic (16–17) organizers are limited to small, non-commercial gatherings.
+        if (organizer.getAge() < 18 && (draft.purpose() == EventPurpose.TICKETED_EVENT || draft.expectedAttendance() > 50))
+            throw new IllegalArgumentException("Organizers aged 16–17 may create only small non-commercial gatherings.");
         Objects.requireNonNull(draft.venue(), "A venue must be selected.");
         if (!draft.venue().supports(draft.purpose())) throw new IllegalArgumentException("The selected venue does not support that event purpose.");
         if (draft.expectedAttendance() > draft.venue().capacity()) throw new IllegalArgumentException("Expected attendance exceeds the selected venue capacity.");
@@ -239,6 +287,29 @@ public final class EventService {
             if (!categoryNames.add(category.name().toLowerCase(Locale.ROOT))) throw new IllegalArgumentException("Ticket category names must be unique.");
         }
         return categories;
+    }
+
+    private void validateReservationForNewEvent(Customer organizer, EventDraft draft, VenueReservation reservation)
+            throws IOException {
+        if (!reservation.organizerId().equals(organizer.getId()))
+            throw new IllegalArgumentException("The reservation must belong to this customer.");
+        if (!reservation.eventId().isBlank())
+            throw new IllegalArgumentException("This reservation is already linked to another event.");
+        if (reservation.status() != BookingStatus.APPROVED && reservation.status() != BookingStatus.CONFIRMED)
+            throw new IllegalArgumentException("Your reservation is awaiting administrator approval.");
+        if (reservation.paymentStatus() != PaymentStatus.PAID && reservation.paymentStatus() != PaymentStatus.VERIFIED)
+            throw new IllegalArgumentException("The associated reservation must be fully paid.");
+        if (!reservation.date().equals(draft.date()) || !reservation.startTime().equals(draft.startTime())
+                || !reservation.endTime().equals(draft.endTime()) || !reservation.venueName().equals(draft.venue().name()))
+            throw new IllegalArgumentException("The event must match the approved venue reservation schedule.");
+        boolean recordedPayment = payments.findAll().stream().anyMatch(payment -> payment.customerId().equals(organizer.getId())
+                && payment.referenceId().equals(reservation.id()) && payment.purpose() == PaymentPurpose.VENUE_BOOKING
+                && (payment.status() == PaymentStatus.PAID || payment.status() == PaymentStatus.VERIFIED)
+                && payment.amount().compareTo(reservation.cost()) == 0);
+        boolean refunded = payments.findAll().stream().anyMatch(payment -> payment.referenceId().equals(reservation.id())
+                && payment.purpose() == PaymentPurpose.VENUE_BOOKING && payment.status() == PaymentStatus.REFUNDED);
+        if (!recordedPayment || refunded)
+            throw new IllegalArgumentException("The associated reservation has no matching completed payment record.");
     }
 
     private static Event withStatus(Event e, EventApprovalStatus status) {

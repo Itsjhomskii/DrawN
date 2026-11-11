@@ -36,6 +36,13 @@ public final class PrivateEventAccessRepository {
         return false;
     }
 
+    public synchronized void delete(String eventId) throws IOException {
+        List<String> rows = read();
+        if (rows.isEmpty()) return;
+        rows.removeIf(row -> !row.equals(HEADER) && row.startsWith(eventId + ","));
+        Files.write(file, rows, StandardCharsets.UTF_8);
+    }
+
     private List<String> read() throws IOException {
         if (!Files.exists(file)) return new ArrayList<>();
         List<String> rows = Files.readAllLines(file, StandardCharsets.UTF_8);

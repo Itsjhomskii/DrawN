@@ -102,6 +102,29 @@ public final class TicketRepository {
                 && p.status() != TicketPurchaseStatus.REFUNDED && p.status() != TicketPurchaseStatus.CANCELLED
                 && p.status() != TicketPurchaseStatus.FAILED);
     }
+    /** Removes setup data for a failed event creation before any customer can buy a ticket. */
+    public synchronized void discardUnpurchasedEvent(String eventId) throws IOException {
+        if (allPurchaseRecords().stream().anyMatch(p -> p.eventId().equals(eventId)))
+            throw new IllegalStateException("Cannot discard an event that has ticket purchases.");
+        List<String> typeRows = read(types, TYPE_HEADER);
+        if (!typeRows.isEmpty()) {
+            typeRows.removeIf(row -> {
+                if (row.isBlank() || row.equals(TYPE_HEADER) || row.equals(LEGACY_TYPE_HEADER)) return false;
+                try { return parse(row).get(1).equals(eventId); }
+                catch (IOException ex) { throw new IllegalStateException(ex); }
+            });
+            write(types, typeRows);
+        }
+        List<String> publicationRows = read(publications, PUBLISH_HEADER);
+        if (!publicationRows.isEmpty()) {
+            publicationRows.removeIf(row -> {
+                if (row.isBlank() || row.equals(PUBLISH_HEADER)) return false;
+                try { return parse(row).get(0).equals(eventId); }
+                catch (IOException ex) { throw new IllegalStateException(ex); }
+            });
+            write(publications, publicationRows);
+        }
+    }
     public synchronized void updatePurchaseStatus(String purchaseId, TicketPurchaseStatus status) throws IOException {
         List<String> rows=readPurchases(); boolean changed=false;
         for(int i=1;i<rows.size();i++){if(rows.get(i).isBlank())continue;List<String> f=parse(rows.get(i));if(f.get(0).equals(purchaseId)){f.set(7,status.name());rows.set(i,csv(f.toArray(String[]::new)));changed=true;}}

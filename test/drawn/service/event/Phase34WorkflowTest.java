@@ -67,9 +67,10 @@ public final class Phase34WorkflowTest {
             assert pending.cost().compareTo(VenueCatalog.all().get(5).hourlyRate().multiply(new BigDecimal("2")))==0;
             assert ReservationService.price(event,ReservationPricing.HALF_DAY_MORNING)
                     .compareTo(VenueCatalog.all().get(5).morningRate())==0;
-            reservationService.approve(pending.id());
-            VenueReservation confirmed=paymentService.payVenue(owner,ownerAccount,pending.id());
-            assert confirmed.status()==BookingStatus.RESERVED&&confirmed.paymentStatus()==PaymentStatus.PAID;
+            VenueReservation paidPending=paymentService.payVenue(owner,ownerAccount,pending.id());
+            assert paidPending.status()==BookingStatus.PENDING&&paidPending.paymentStatus()==PaymentStatus.PAID;
+            VenueReservation confirmed=reservationService.approve(pending.id());
+            assert confirmed.status()==BookingStatus.APPROVED&&confirmed.paymentStatus()==PaymentStatus.PAID;
             assert eventService.submitDraft(owner,event.id()).approvalStatus()==drawn.model.event.EventApprovalStatus.PENDING;
             Event birthday=new Event("birthday",owner.getId(),"Birthday","Private gathering",EventType.BIRTHDAY,
                     drawn.model.event.EventPurpose.SOCIAL_GATHERING,drawn.model.event.EventVisibility.PRIVATE,EVENT_DATE,
@@ -115,13 +116,16 @@ public final class Phase34WorkflowTest {
             Event conflicting=eventService.saveDraft(owner,draft("Conflict",EVENT_DATE,LocalTime.of(10,0),
                     LocalTime.of(12,0),20,event.venue(),"Another event"));
             VenueReservation conflict=reservationService.request(owner,conflicting,ReservationPricing.HOURLY);
+            paymentService.payVenue(owner,ownerAccount,conflict.id());
             expectIllegal(()->reservationService.approve(conflict.id()));
+            VenueReservation declinedConflict=reservationService.decline(conflict.id(),"Venue time conflicts with an approved booking");
+            assert declinedConflict.status()==BookingStatus.DECLINED&&declinedConflict.paymentStatus()==PaymentStatus.REFUNDED;
 
             Event rejected=eventService.saveDraft(owner,draft("Rejected event",EVENT_DATE,LocalTime.of(12,0),
                     LocalTime.of(13,0),10,VenueCatalog.all().get(5),"Rejected details"));
             VenueReservation rejectedReservation=reservationService.request(owner,rejected,ReservationPricing.HOURLY);
-            reservationService.approve(rejectedReservation.id());
             paymentService.payVenue(owner,ownerAccount,rejectedReservation.id());
+            reservationService.approve(rejectedReservation.id());
             eventService.submitDraft(owner,rejected.id());
             eventService.review(rejected.id(),false);
             expectIllegal(()->publishing.publish(owner,rejected.id()));
@@ -142,12 +146,27 @@ public final class Phase34WorkflowTest {
             VenueReservation independent=reservationService.request(owner,VenueCatalog.all().get(5),EVENT_DATE,
                     LocalTime.of(14,0),LocalTime.of(16,0),ReservationPricing.HOURLY);
             assert independent.eventId().isBlank();
-            reservationService.approve(independent.id());
             VenueReservation independentPaid=paymentService.payVenue(owner,ownerAccount,independent.id());
             assert independentPaid.paymentStatus()==PaymentStatus.PAID;
+            reservationService.approve(independent.id());
             reservationService.attachEvent(owner,independent.id(),boundaryDescription.id());
             assert new ReservationRepository(dir).findById(independent.id()).eventId().equals(boundaryDescription.id());
             expectIllegal(()->reservationService.attachEvent(buyer,independent.id(),boundaryDescription.id()));
+
+            // Customer-facing complete-or-cancel creation uses only approved and paid reservations.
+            LocalDate creationDate=EVENT_DATE.plusDays(2);
+            EventDraft completeDraft=new EventDraft("Complete event", "A complete customer event", EventType.CONCERT,
+                    EventPurpose.TICKETED_EVENT, EventVisibility.PUBLIC, creationDate, LocalTime.of(14,0),
+                    LocalTime.of(16,0), 20, VenueCatalog.all().get(5),
+                    List.of(new TicketCategory("General",new BigDecimal("25.00"),20)));
+            VenueReservation creationReservation=reservationService.request(owner,VenueCatalog.all().get(5),creationDate,
+                    LocalTime.of(14,0),LocalTime.of(16,0),ReservationPricing.HOURLY);
+            paymentService.payVenue(owner,ownerAccount,creationReservation.id());
+            expectIllegal(()->eventService.createPublishedForApprovedReservation(owner,completeDraft,creationReservation.id()));
+            reservationService.approve(creationReservation.id());
+            Event complete=eventService.createPublishedForApprovedReservation(owner,completeDraft,creationReservation.id());
+            assert complete.approvalStatus()==drawn.model.event.EventApprovalStatus.PUBLISHED;
+            assert reservationRepo.findById(creationReservation.id()).eventId().equals(complete.id());
         } finally {
             try(var paths=Files.walk(dir)){paths.sorted(java.util.Comparator.reverseOrder()).forEach(p->{try{Files.deleteIfExists(p);}catch(Exception ex){throw new RuntimeException(ex);}});}
         }

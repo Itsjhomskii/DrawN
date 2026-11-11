@@ -2,7 +2,7 @@
 
 **Tagline:** From drawing to doing.
 
-DrawN is a console-based Java project for event listings and ticket reservations, with customer registration and a simulated wallet.
+DrawN is a Java event listing and ticketing project with a preserved console workflow and a JavaFX customer GUI foundation.
 
 ## Development status
 
@@ -12,29 +12,30 @@ Demo admin login: `admin` / `234`. Customer accounts are created through registr
 
 ## Requirements
 
-- Java 17 or later
-- No database or external service is currently used
+- Java 17 or later (the included Maven build is verified with JDK 21)
+- Maven 3.9+ for JavaFX dependencies
+- No database or external service is used; persistence remains CSV-based
 
 ## Compile and run
 
-Double-click `run.bat` to compile the app and open its console menu. You can also run it from PowerShell in the project directory:
+Run the console backup from `run.bat`, or start the JavaFX customer interface with `run-gui.bat`.
+
+From PowerShell:
 
 ```powershell
-$sources = Get-ChildItem -Recurse src -Filter *.java | ForEach-Object FullName
-javac --release 17 -d out $sources
-java -cp out drawn.DrawN
+mvn compile exec:java -Dexec.mainClass=drawn.DrawN
+mvn javafx:run
 ```
 
-Compile and run the dependency-free checks from PowerShell:
+Compile and run the existing assertion checks from PowerShell:
 
 ```powershell
-$sources = Get-ChildItem -Recurse src,test -Filter *.java | ForEach-Object FullName
-javac --release 17 -d out $sources
-java -ea -cp out drawn.UserModelTest
-java -ea -cp out drawn.RegistrationWalletTest
-java -ea -cp out drawn.service.event.EventServiceTest
-java -ea -cp out drawn.service.event.Phase34WorkflowTest
-java -ea -cp out drawn.service.event.CustomerRecoveryAndEarningsTest
+mvn test-compile
+java -ea -cp target/classes;target/test-classes drawn.UserModelTest
+java -ea -cp target/classes;target/test-classes drawn.RegistrationWalletTest
+java -ea -cp target/classes;target/test-classes drawn.service.event.EventServiceTest
+java -ea -cp target/classes;target/test-classes drawn.service.event.Phase34WorkflowTest
+java -ea -cp target/classes;target/test-classes drawn.service.event.CustomerRecoveryAndEarningsTest
 ```
 
 The organizer commission defaults to 10%. Set the Java system property `drawn.commission.percent` to a value from 0 to 100 to change it, for example `java -Ddrawn.commission.percent=12.5 -cp out drawn.DrawN`.

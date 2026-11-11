@@ -76,6 +76,15 @@ public final class ReservationRepository {
                 current.paymentStatus(), current.declineReason()));
     }
 
+    /** Removes only an event link; the paid venue request itself remains intact. */
+    public synchronized void detachEvent(String reservationId, String organizerId) throws IOException {
+        VenueReservation current = findById(reservationId);
+        if (!current.organizerId().equals(organizerId)) throw new IllegalArgumentException("Reservation does not belong to this account.");
+        update(new VenueReservation(current.id(), "", current.organizerId(), current.venueName(), current.date(),
+                current.startTime(), current.endTime(), current.pricing(), current.cost(), current.status(),
+                current.paymentStatus(), current.declineReason()));
+    }
+
     private List<String> read() throws IOException {
         if (!Files.exists(file)) return new ArrayList<>();
         List<String> rows = Files.readAllLines(file, StandardCharsets.UTF_8);

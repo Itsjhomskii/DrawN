@@ -22,6 +22,7 @@ import drawn.service.payment.PaymentService;
 import drawn.service.payment.CommissionPolicy;
 import drawn.service.payment.OrganizerEarningsService;
 import drawn.service.event.EventService;
+import drawn.service.customer.CustomerAccessService;
 import drawn.storage.AccountStore;
 import drawn.storage.EventRepository;
 import drawn.storage.ReservationRepository;
@@ -51,6 +52,7 @@ public final class DrawN {
     private final Scanner input = new Scanner(System.in);
     private final List<LegacyEvent> events = new ArrayList<>();
     private final AccountStore accounts = new AccountStore(Path.of("data"));
+    private final CustomerAccessService customerAccess = new CustomerAccessService(accounts);
     private final EventRepository eventRepository = new EventRepository(Path.of("data"));
     private final ReservationRepository reservationRepository = new ReservationRepository(Path.of("data"));
     private final PaymentRepository paymentRepository = new PaymentRepository(Path.of("data"));
@@ -116,28 +118,14 @@ public final class DrawN {
             return;
         }
         try {
-            String normalized = normalizeLoginContact(contact);
-            AccountStore.Account account = accounts.loadAccounts().stream()
-                    .filter(candidate -> candidate.getContactValue().equalsIgnoreCase(normalized))
-                    .filter(candidate -> candidate.getPassword().equals(password))
-                    .findFirst().orElse(null);
-            if (account == null) {
-                System.out.println("Incorrect contact or password. Please try again.");
-                return;
-            }
+            CustomerAccessService.AuthenticatedCustomer authenticated = customerAccess.authenticate(contact, password);
+            AccountStore.Account account = authenticated.account();
             System.out.println("Welcome, " + account.getFullName() + "!");
-            Customer customer;
-            try {
-                customer = new Customer(account.getId(), account.getFullName(), account.getContactMethod(),
-                        account.getContactValue(), LocalDate.parse(account.getDateOfBirth()));
-                System.out.println("Organizer level: " + customer.getOrganizerLevel());
-            } catch (IllegalArgumentException ex) {
-                System.out.println("Organizer level could not be calculated: " + ex.getMessage());
-                return;
-            }
+            Customer customer = authenticated.customer();
+            System.out.println("Organizer level: " + customer.getOrganizerLevel());
             customerMenu(account, customer);
         } catch (IllegalArgumentException ex) {
-            System.out.println("Enter a valid email address or exactly 10 phone digits.");
+            System.out.println(ex.getMessage());
         } catch (IOException ex) {
             System.out.println("Could not read customer accounts: " + ex.getMessage());
         }
@@ -165,11 +153,10 @@ public final class DrawN {
             String password = readRequiredPassword();
             BigDecimal initialAmount = readInitialFunding();
             String contactValue = method == ContactMethod.EMAIL ? email : phone;
-            String id = contactValue;
-            AccountStore.Account account = new AccountStore.Account(id, firstName, lastName,
-                    dateOfBirth.toString(), email, phone, method, password, initialAmount);
-            Customer customer = new Customer(id, firstName + " " + lastName, method, contactValue, dateOfBirth);
-            accounts.register(account, initialAmount);
+            CustomerAccessService.AuthenticatedCustomer registered = customerAccess.register(firstName, lastName,
+                    dateOfBirth, method, contactValue, password, initialAmount);
+            AccountStore.Account account = registered.account();
+            Customer customer = registered.customer();
             if (method == ContactMethod.EMAIL) {
                 System.out.println("A simulated confirmation email has been sent to " + email + ".");
             }
@@ -348,7 +335,7 @@ public final class DrawN {
         while (inHub) {
             printSectionHeader("Plan an Event");
             printMenuItem("1", "My Event Plans & Venue Requests");
-            printMenuItem("2", "Create & Publish Event (Paid Venue)");
+            printMenuItem("2", "Create & Publish Event (Approved Venue)");
             printMenuItem("3", "Manage Venue Requests");
             printMenuItem("4", "Explore Events");
             printMenuItem("0", "Back to Customer Menu");
@@ -426,6 +413,10 @@ public final class DrawN {
                         booking.cost().setScale(2).toPlainString());
                 System.out.println("\n1. Cancel event\n0. Back");
                 if (readInt("Choose an action: ", 0, 1) == 1) {
+                    if (!readYesNo("Cancel this event and process any eligible refunds? (y/n): ")) {
+                        System.out.println("Event cancellation cancelled.");
+                        return;
+                    }
                     cancellationService.cancel(customer, event.id());
                     System.out.println("Event and linked reservation cancelled; paid tickets and reservations were refunded.");
                 }
@@ -466,8 +457,15 @@ public final class DrawN {
             System.out.println("Reservation cost: PHP " + selected.cost().setScale(2).toPlainString());
             System.out.println("Pricing: " + reservationCostExplanation(selected));
             System.out.println("Reservation status: " + reservationStatusLabel(selected));
+            System.out.println("Payment status: " + selected.paymentStatus());
+            if (selected.status() == BookingStatus.PENDING && selected.paymentStatus() == PaymentStatus.PAID)
+                System.out.println("This paid request is awaiting administrator approval.");
             System.out.println("\n1. Cancel reservation\n0. Back");
             if (readInt("Choose an action: ", 0, 1) == 1) {
+                if (!readYesNo("Cancel this reservation and apply the eligible refund policy? (y/n): ")) {
+                    System.out.println("Reservation cancellation cancelled.");
+                    return;
+                }
                 try {
                     VenueReservation cancelled = paymentService.cancelReservation(customer, account, selected.id());
                     System.out.println("Reservation cancelled. Refund status: " + cancelled.paymentStatus());
@@ -495,25 +493,51 @@ public final class DrawN {
     }
 
     private void requestVenueReservation(AccountStore.Account account, Customer customer) {
-        List<Venue> venues=VenueCatalog.all();
-        for(int i=0;i<venues.size();i++) System.out.printf("%d. %s | %s | capacity %d | PHP %s/hour%n",i+1,
-                venues.get(i).name(),venues.get(i).type(),venues.get(i).capacity(),venues.get(i).hourlyRate());
-        Venue venue=venues.get(readInt("Choose venue: ",1,venues.size())-1);
+        EventPurpose purpose = chooseEventPurpose();
+        Venue venue = chooseVenue(purpose);
         LocalDate date=readEventDate();
         LocalTime start=readTime("Start time (HH:mm): ");
         LocalTime end=readTime("End time (HH:mm): ");
         ReservationPricing pricing=chooseEnum("Reservation pricing",ReservationPricing.values());
         try {
-            VenueReservation reservation=reservationService.request(customer,venue,date,start,end,pricing);
-            if (account.getWalletBalance().compareTo(reservation.cost()) < 0) {
-                reservationRepository.delete(reservation.id());
-                throw new IllegalArgumentException("Insufficient wallet balance for this venue reservation.");
+            ReservationService.validatePricing(start, end, pricing);
+            BigDecimal quote = reservationQuote(venue, start, end, pricing);
+            System.out.println("\nReservation payment review");
+            System.out.printf("Venue: %s%nDate: %s%nTime: %s-%s%nAmount due: PHP %s%n", venue.name(), date,
+                    start, end, quote.setScale(2).toPlainString());
+            if (account.getWalletBalance().compareTo(quote) < 0)
+                throw new IllegalArgumentException("Insufficient wallet balance.");
+            if (!readYesNo("Confirm full reservation payment? (y/n): ")) {
+                System.out.println("Reservation request cancelled. No payment was taken.");
+                return;
             }
-            VenueReservation approved = reservationService.approve(reservation.id());
-            VenueReservation confirmed = paymentService.payVenue(customer, account, approved.id());
-            System.out.printf("Reservation confirmed for %s. PHP %s was paid from your wallet.%n", venue.name(),
-                    confirmed.cost().setScale(2).toPlainString());
+            VenueReservation reservation=reservationService.request(customer,venue,date,start,end,pricing);
+            VenueReservation submitted;
+            try {
+                submitted = paymentService.payVenue(customer, account, reservation.id());
+            } catch (IOException | RuntimeException paymentFailure) {
+                // If no financial record was written, remove the just-created unpaid request.
+                // Otherwise leave it for the journal recovery path instead of losing the payment.
+                VenueReservation current = reservationRepository.findById(reservation.id());
+                if (current.paymentStatus() == PaymentStatus.UNPAID
+                        && !accounts.hasWalletTransaction(account.getId(), "PAYMENT:venue:" + reservation.id()))
+                    reservationRepository.delete(reservation.id());
+                throw paymentFailure;
+            }
+            System.out.printf("%nReservation payment successful!%n%nAmount Paid: PHP %s%nPayment Status: %s%nReservation Status: %s%n%n"
+                            + "Your reservation has been submitted for administrator approval.%n"
+                            + "You may create an event using this reservation once it has been approved.%n",
+                    submitted.cost().setScale(2).toPlainString(), submitted.paymentStatus(), submitted.status());
         } catch(IOException|IllegalArgumentException ex) { System.out.println("Reservation request failed: "+ex.getMessage()); }
+    }
+
+    private BigDecimal reservationQuote(Venue venue, LocalTime start, LocalTime end, ReservationPricing pricing) {
+        return switch (pricing) {
+            case HALF_DAY_MORNING -> venue.morningRate();
+            case HALF_DAY_AFTERNOON -> venue.afternoonRate();
+            case HOURLY -> venue.hourlyRate().multiply(BigDecimal.valueOf(java.time.Duration.between(start, end).toMinutes()))
+                    .divide(BigDecimal.valueOf(60), 2, java.math.RoundingMode.HALF_UP);
+        };
     }
 
     private void browsePublishedEvents() {
@@ -569,12 +593,7 @@ public final class DrawN {
             List<Event> published = publishingService.publishedEvents();
             if (published.isEmpty()) {
                 System.out.println("No published ticketed events are available.");
-                if (!events.isEmpty() && readYesNo("Use the existing in-memory event reservation list? (y/n): ")) reserveTickets();
                 return;
-            }
-            if (!events.isEmpty()) {
-                System.out.println("1. Published ticketed events\n2. Existing admin-created events");
-                if (readInt("Choose a ticket source: ", 1, 2) == 2) { reserveTickets(); return; }
             }
             for (int i = 0; i < published.size(); i++) System.out.printf("%d. %s | %s%n", i + 1,
                     published.get(i).name(), published.get(i).date());
@@ -701,13 +720,13 @@ public final class DrawN {
 
         try {
             List<VenueReservation> eligible = reservationService.forCustomer(customer).stream()
-                    .filter(r -> (r.status() == BookingStatus.RESERVED || r.status() == BookingStatus.CONFIRMED)
+                    .filter(r -> (r.status() == BookingStatus.APPROVED || r.status() == BookingStatus.CONFIRMED)
                             && r.paymentStatus() == PaymentStatus.PAID
                             && r.eventId().isBlank()).toList();
-            System.out.println("\nCreate & Publish Event from a Paid Venue Booking");
+            System.out.println("\nCreate & Publish Event from an Approved Venue Booking");
             if (eligible.isEmpty()) {
-                System.out.println("No paid venue booking is ready for event details yet.");
-                System.out.println("First request a venue, wait for approval, and pay it from Manage Venue Requests.");
+                System.out.println("No approved, paid venue reservation is ready for event details yet.");
+                System.out.println("Request and pay for a venue first, then wait for administrator approval.");
                 if (readYesNo("Request another venue now? (y/n): ")) requestVenueReservation(account, customer);
                 return;
             }
@@ -735,22 +754,35 @@ public final class DrawN {
             EventDraft draft=new EventDraft(name,description,type,purpose,visibility,reservation.date(),reservation.startTime(),
                     reservation.endTime(),attendance,venue,categories);
             printDraft(draft);
-            if(!readYesNo("Create and publish this event now? (y/n): ")) return;
-            Event saved=eventService.saveDraftForReservation(customer,draft,reservation.id());
-            reservationService.attachEvent(customer,reservation.id(),saved.id());
-            if (visibility == EventVisibility.PRIVATE) privateEventAccess.save(saved.id(), privateKeyword);
-            if (purpose == EventPurpose.TICKETED_EVENT) {
-                LocalDateTime salesStart = LocalDateTime.now();
-                LocalDateTime salesDeadline = reservation.date().atTime(reservation.startTime()).minusMinutes(1);
-                List<TicketType> types = categories.stream().map(category -> new TicketType(java.util.UUID.randomUUID().toString(),
-                        saved.id(), category.name(), category.name() + " ticket", category.price(), category.quantity(), 0,
-                        salesStart, salesDeadline)).toList();
-                publishingService.configureTickets(customer, saved.id(), types);
+            if(!readYesNo("Confirm and create this event? (y/n): ")) {
+                System.out.println("Event creation cancelled. Your venue reservation remains valid.");
+                return;
             }
-            eventService.publish(customer, saved.id());
-            if (purpose == EventPurpose.TICKETED_EVENT) publishingService.publish(customer, saved.id());
-            System.out.println("Event published.");
-        } catch (IOException | IllegalArgumentException ex) {
+            Event saved = null;
+            try {
+                saved = eventService.createPublishedForApprovedReservation(customer, draft, reservation.id());
+                if (visibility == EventVisibility.PRIVATE) privateEventAccess.save(saved.id(), privateKeyword);
+                if (purpose == EventPurpose.TICKETED_EVENT) {
+                    String eventId = saved.id();
+                    LocalDateTime salesStart = LocalDateTime.now();
+                    LocalDateTime salesDeadline = reservation.date().atTime(reservation.startTime()).minusMinutes(1);
+                    List<TicketType> types = categories.stream().map(category -> new TicketType(java.util.UUID.randomUUID().toString(),
+                            eventId, category.name(), category.name() + " ticket", category.price(), category.quantity(), 0,
+                            salesStart, salesDeadline)).toList();
+                    publishingService.configureTickets(customer, saved.id(), types);
+                    publishingService.publish(customer, saved.id());
+                }
+                System.out.println("Event published.");
+            } catch (IOException | RuntimeException creationFailure) {
+                if (saved != null) {
+                    try {
+                        privateEventAccess.delete(saved.id());
+                        eventService.discardFailedCustomerCreation(customer, saved.id(), reservation.id());
+                    } catch (IOException | RuntimeException rollbackFailure) { creationFailure.addSuppressed(rollbackFailure); }
+                }
+                throw creationFailure;
+            }
+        } catch (IOException | RuntimeException ex) {
             System.out.println("Event submission failed: " + ex.getMessage());
         }
     }

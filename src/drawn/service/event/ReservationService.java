@@ -84,6 +84,8 @@ public final class ReservationService {
     public VenueReservation approve(String reservationId) throws IOException {
         VenueReservation r = reservations.findById(reservationId);
         if (r.status() != BookingStatus.PENDING) throw new IllegalArgumentException("Only pending requests can be approved.");
+        if (r.paymentStatus() != PaymentStatus.PAID && r.paymentStatus() != PaymentStatus.VERIFIED)
+            throw new IllegalArgumentException("Only fully paid reservation requests can be approved.");
         Event event = r.eventId().isBlank() ? null : eventById(r.eventId());
         for (VenueReservation other : reservations.findAll()) {
             if (other.id().equals(r.id()) || !other.venueName().equals(r.venueName()) || !other.date().equals(r.date())) continue;

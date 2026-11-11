@@ -36,7 +36,8 @@ public final class PaymentService {
         VenueReservation r = reservations.findById(reservationId);
         if (!r.organizerId().equals(customer.getId()) || !account.getId().equals(customer.getId()))
             throw new IllegalArgumentException("Reservation does not belong to this customer.");
-        if (r.status() != BookingStatus.APPROVED) throw new IllegalArgumentException("Only approved reservations can be paid.");
+        if (r.status() != BookingStatus.PENDING && r.status() != BookingStatus.APPROVED)
+            throw new IllegalArgumentException("Only pending or approved reservations can be paid.");
         if (r.paymentStatus() != PaymentStatus.UNPAID) throw new IllegalArgumentException("Reservation is not unpaid.");
         String operation = "venuepay:" + r.id();
         List<String> payload = List.of(customer.getId(), r.id(), r.cost().toPlainString(), "venue-payment:" + r.id());
@@ -57,8 +58,11 @@ public final class PaymentService {
         if (!ledger.hasTransaction(account.getId(), reservation.id(), PaymentPurpose.VENUE_BOOKING, PaymentStatus.PAID)
                 && !ledger.hasTransaction(paymentId)) ledger.append(new PaymentTransaction(paymentId, account.getId(),
                 reservation.id(), PaymentPurpose.VENUE_BOOKING, reservation.cost(), PaymentStatus.PAID, LocalDateTime.now()));
-        VenueReservation paid = reservation.withPayment(PaymentStatus.PAID).withStatus(BookingStatus.RESERVED, "");
-        if (reservation.paymentStatus() != PaymentStatus.PAID || reservation.status() != BookingStatus.RESERVED)
+        // A customer payment submits a request; it must never approve the request.  Keep a
+        // pending request pending until an administrator makes the decision.  APPROVED is
+        // retained here only for legacy records that were approved before this workflow.
+        VenueReservation paid = reservation.withPayment(PaymentStatus.PAID);
+        if (reservation.paymentStatus() != PaymentStatus.PAID)
             reservations.update(paid);
         journal.state(operation, "COMPLETED");
         return paid;
@@ -151,9 +155,16 @@ public final class PaymentService {
         if (current.status() == BookingStatus.DECLINED) throw new IllegalArgumentException("Reservation is already declined.");
         if (current.paymentStatus() == PaymentStatus.PAID) {
             if (!owner.getId().equals(current.organizerId())) throw new IllegalArgumentException("Wrong reservation owner.");
-            accounts.refund(owner, current.cost(), "venue:" + current.id());
-            ledger.append(new PaymentTransaction(UUID.randomUUID().toString(), owner.getId(), current.id(),
-                    PaymentPurpose.VENUE_BOOKING, current.cost(), PaymentStatus.REFUNDED, LocalDateTime.now()));
+            String refundReference = "venue:" + current.id();
+            String refundId = "refund-venue:" + current.id();
+            // Both the wallet and payment ledger use stable references, making a retry after
+            // an interrupted decline safe instead of issuing a second refund.
+            if (!accounts.hasWalletTransaction(owner.getId(), "REFUND:" + refundReference))
+                accounts.refund(owner, current.cost(), refundReference);
+            if (!ledger.hasTransaction(owner.getId(), current.id(), PaymentPurpose.VENUE_BOOKING, PaymentStatus.REFUNDED)
+                    && !ledger.hasTransaction(refundId))
+                ledger.append(new PaymentTransaction(refundId, owner.getId(), current.id(),
+                        PaymentPurpose.VENUE_BOOKING, current.cost(), PaymentStatus.REFUNDED, LocalDateTime.now()));
             current = current.withPayment(PaymentStatus.REFUNDED);
         }
         VenueReservation declined = current.withStatus(BookingStatus.DECLINED, reason);
