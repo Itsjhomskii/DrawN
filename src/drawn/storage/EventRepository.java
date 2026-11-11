@@ -31,10 +31,26 @@ public final class EventRepository {
 
     private final Path eventsFile;
     private final Path categoriesFile;
+    private final Path reservationLinksFile;
 
     public EventRepository(Path dataDirectory) {
         eventsFile = dataDirectory.resolve("event-submissions.csv");
         categoriesFile = dataDirectory.resolve("event-ticket-categories.csv");
+        reservationLinksFile = dataDirectory.resolve("event-reservation-links.csv");
+    }
+
+    public synchronized void linkReservation(String eventId, String reservationId) throws IOException {
+        List<String> rows = readRecords(reservationLinksFile, "eventId,reservationId");
+        if (rows.isEmpty()) rows.add("eventId,reservationId");
+        if (rows.stream().skip(1).map(line -> line.split(",", -1)[0]).anyMatch(eventId::equals))
+            throw new IllegalArgumentException("Event already has a linked reservation.");
+        rows.add(csv(eventId, reservationId)); writeRecords(reservationLinksFile, rows);
+    }
+
+    public synchronized String reservationId(String eventId) throws IOException {
+        List<String> rows = readRecords(reservationLinksFile, "eventId,reservationId");
+        for (int i=1;i<rows.size();i++) { List<String> f=parseCsv(rows.get(i)); if(f.size()==2&&f.get(0).equals(eventId)) return f.get(1); }
+        return "";
     }
 
     public synchronized void save(Event event) throws IOException {
@@ -44,10 +60,19 @@ public final class EventRepository {
         List<String> categoryLines = new ArrayList<>(previousCategories);
         if (eventLines.isEmpty()) eventLines.add(EVENT_HEADER);
         if (categoryLines.isEmpty()) categoryLines.add(CATEGORY_HEADER);
-        eventLines.add(csv(event.id(), event.organizerId(), event.name(), event.description(), event.type().name(),
+        String encodedEvent = csv(event.id(), event.organizerId(), event.name(), event.description(), event.type().name(),
                 event.purpose().name(), event.visibility().name(), event.date().toString(), event.startTime().toString(),
                 event.endTime().toString(), Integer.toString(event.expectedAttendance()), event.venue().name(),
-                event.venue().type().name(), event.approvalStatus().name(), event.submittedAt().toString()));
+                event.venue().type().name(), event.approvalStatus().name(), event.submittedAt().toString());
+        int existingIndex = -1;
+        for (int i = 1; i < eventLines.size(); i++) if (!eventLines.get(i).isBlank()
+                && parseCsv(eventLines.get(i)).get(0).equals(event.id())) { existingIndex = i; break; }
+        if (existingIndex >= 0) eventLines.set(existingIndex, encodedEvent); else eventLines.add(encodedEvent);
+        categoryLines.removeIf(line -> {
+            if (line.equals(CATEGORY_HEADER) || line.isBlank()) return false;
+            try { return parseCsv(line).get(0).equals(event.id()); }
+            catch (IOException ex) { throw new IllegalStateException(ex); }
+        });
         for (TicketCategory category : event.ticketCategories()) {
             categoryLines.add(csv(event.id(), category.name(), category.price().toPlainString(),
                     Integer.toString(category.quantity())));
@@ -58,6 +83,39 @@ public final class EventRepository {
         } catch (IOException ex) {
             restore(eventsFile, previousEvents);
             restore(categoriesFile, previousCategories);
+            throw ex;
+        }
+    }
+
+    public synchronized void delete(String eventId) throws IOException {
+        List<String> oldEvents = readRecords(eventsFile, EVENT_HEADER);
+        List<String> oldCategories = readRecords(categoriesFile, CATEGORY_HEADER);
+        List<String> oldLinks = readRecords(reservationLinksFile, "eventId,reservationId");
+        List<String> events = new ArrayList<>(oldEvents);
+        List<String> categories = new ArrayList<>(oldCategories);
+        List<String> links = new ArrayList<>(oldLinks);
+        boolean found = events.removeIf(row -> {
+            if (row.equals(EVENT_HEADER) || row.isBlank()) return false;
+            try { return parseCsv(row).get(0).equals(eventId); }
+            catch (IOException ex) { throw new IllegalStateException(ex); }
+        });
+        if (!found) throw new IllegalArgumentException("Event not found.");
+        categories.removeIf(row -> {
+            if (row.equals(CATEGORY_HEADER) || row.isBlank()) return false;
+            try { return parseCsv(row).get(0).equals(eventId); }
+            catch (IOException ex) { throw new IllegalStateException(ex); }
+        });
+        links.removeIf(row -> {
+            if (row.equals("eventId,reservationId") || row.isBlank()) return false;
+            try { return parseCsv(row).get(0).equals(eventId); }
+            catch (IOException ex) { throw new IllegalStateException(ex); }
+        });
+        try {
+            writeRecords(eventsFile, events); writeRecords(categoriesFile, categories);
+            if (!oldLinks.isEmpty()) writeRecords(reservationLinksFile, links);
+        } catch (IOException ex) {
+            restore(eventsFile, oldEvents); restore(categoriesFile, oldCategories);
+            if (!oldLinks.isEmpty()) restore(reservationLinksFile, oldLinks);
             throw ex;
         }
     }
@@ -80,10 +138,14 @@ public final class EventRepository {
 
         List<String> eventRows = readRecords(eventsFile, EVENT_HEADER);
         List<Event> events = new ArrayList<>();
+        Map<String, List<String>> uniqueEvents = new java.util.LinkedHashMap<>();
         for (int i = 1; i < eventRows.size(); i++) {
             if (eventRows.get(i).isBlank()) continue;
             List<String> fields = parseCsv(eventRows.get(i));
             if (fields.size() != 15) throw new IOException("Invalid event submission record.");
+            uniqueEvents.put(fields.get(0), fields);
+        }
+        for (List<String> fields : uniqueEvents.values()) {
             try {
                 Venue venue = VenueCatalog.all().stream().filter(candidate -> candidate.name().equals(fields.get(11))
                         && candidate.type() == VenueType.valueOf(fields.get(12))).findFirst()
@@ -104,6 +166,22 @@ public final class EventRepository {
 
     public synchronized List<Event> findByOrganizer(String organizerId) throws IOException {
         return findAll().stream().filter(event -> event.organizerId().equals(organizerId)).toList();
+    }
+
+    public synchronized void updateStatus(String eventId, EventApprovalStatus status) throws IOException {
+        List<String> rows = readRecords(eventsFile, EVENT_HEADER);
+        boolean updated = false;
+        for (int i = 1; i < rows.size(); i++) {
+            if (rows.get(i).isBlank()) continue;
+            List<String> f = parseCsv(rows.get(i));
+            if (f.get(0).equals(eventId)) {
+                f.set(13, status.name());
+                rows.set(i, csv(f.toArray(String[]::new)));
+                updated = true;
+            }
+        }
+        if (!updated) throw new IllegalArgumentException("Event not found.");
+        writeRecords(eventsFile, rows);
     }
 
     public synchronized List<Event> findPublicApproved() throws IOException {

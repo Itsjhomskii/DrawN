@@ -53,6 +53,22 @@ public final class ReservationService {
         return booking;
     }
 
+    public VenueReservation request(Customer customer, drawn.model.event.Venue venue, LocalDate date,
+                                    LocalTime start, LocalTime end, ReservationPricing pricing) throws IOException {
+        Objects.requireNonNull(customer); Objects.requireNonNull(venue); Objects.requireNonNull(date);
+        if (date.isBefore(LocalDate.now(clock))) throw new IllegalArgumentException("Reservation date cannot be in the past.");
+        validatePricing(start, end, pricing);
+        Event pricingEvent = new Event("reservation-quote", customer.getId(), "Venue reservation", "Reservation quote",
+                drawn.model.event.EventType.CONFERENCE,
+                venue.type() == drawn.model.event.VenueType.COMMERCIAL ? drawn.model.event.EventPurpose.TICKETED_EVENT : drawn.model.event.EventPurpose.SOCIAL_GATHERING,
+                drawn.model.event.EventVisibility.PRIVATE, date, start, end, 1, venue,
+                drawn.model.event.EventApprovalStatus.DRAFT, java.time.LocalDateTime.now(clock), List.of());
+        VenueReservation booking = new VenueReservation(UUID.randomUUID().toString(), "", customer.getId(), venue.name(),
+                date, start, end, pricing, price(pricingEvent, pricing), BookingStatus.PENDING, PaymentStatus.UNPAID, "");
+        reservations.save(booking);
+        return booking;
+    }
+
     public List<VenueReservation> forCustomer(Customer customer) throws IOException {
         return reservations.findAll().stream().filter(r -> r.organizerId().equals(customer.getId())).toList();
     }
@@ -61,18 +77,21 @@ public final class ReservationService {
         return reservations.findAll().stream().filter(r -> r.status() == BookingStatus.PENDING).toList();
     }
     public VenueReservation find(String id) throws IOException { return reservations.findById(id); }
+    public void attachEvent(Customer customer, String reservationId, String eventId) throws IOException {
+        reservations.attachEvent(reservationId, eventId, customer.getId());
+    }
 
     public VenueReservation approve(String reservationId) throws IOException {
         VenueReservation r = reservations.findById(reservationId);
         if (r.status() != BookingStatus.PENDING) throw new IllegalArgumentException("Only pending requests can be approved.");
-        Event event = eventById(r.eventId());
+        Event event = r.eventId().isBlank() ? null : eventById(r.eventId());
         for (VenueReservation other : reservations.findAll()) {
             if (other.id().equals(r.id()) || !other.venueName().equals(r.venueName()) || !other.date().equals(r.date())) continue;
             if ((other.status() == BookingStatus.APPROVED || other.status() == BookingStatus.CONFIRMED)
                     && overlaps(r.startTime(), r.endTime(), other.startTime(), other.endTime()))
                 throw new IllegalArgumentException("Another approved reservation conflicts with this time.");
         }
-        if (event.expectedAttendance() > event.venue().capacity()) throw new IllegalArgumentException("Venue capacity exceeded.");
+        if (event != null && event.expectedAttendance() > event.venue().capacity()) throw new IllegalArgumentException("Venue capacity exceeded.");
         VenueReservation updated = r.withStatus(BookingStatus.APPROVED, "");
         reservations.update(updated); return updated;
     }

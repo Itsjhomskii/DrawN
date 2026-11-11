@@ -1,2 +1,3 @@
 id,organizerId,name,description,eventType,purpose,visibility,date,startTime,endTime,expectedAttendance,venueName,venueType,approvalStatus,submittedAt
 "44e54cdf-1423-4635-963a-4b50cedeba75","agtotojhomar@gmail.com","1","1","BIRTHDAY","SOCIAL_GATHERING","PRIVATE","2027-10-10","10:10","10:11","1","Venue 5","NON_COMMERCIAL","PENDING","2026-11-05T08:43:43.078745500"
+"sample-commercial-2027","agtotojhomar@gmail.com","DrawN Summer Sound Fest","An open-air live music festival featuring local bands, food stalls, and an evening headline set.","CONCERT","TICKETED_EVENT","PUBLIC","2027-06-19","16:00","22:00","180","Venue 6","COMMERCIAL","APPROVED","2026-11-05T09:00:00"

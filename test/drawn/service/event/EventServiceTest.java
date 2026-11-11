@@ -43,14 +43,14 @@ public final class EventServiceTest {
 
             for (EventPurpose purpose : EventPurpose.values()) {
                 for (EventVisibility visibility : EventVisibility.values()) {
-                    Event saved = service.submit(owner, draft(purpose, visibility));
-                    assert saved.approvalStatus() == EventApprovalStatus.PENDING;
+                    Event saved = service.saveDraft(owner, draft(purpose, visibility));
+                    assert saved.approvalStatus() == EventApprovalStatus.DRAFT;
                     assert saved.organizerId().equals(owner.getId());
                 }
             }
 
             assert service.eventsFor(owner).size() == 4;
-            assert service.pendingCountFor(owner) == 4;
+            assert service.pendingCountFor(owner) == 0;
             assert service.eventsFor(other).isEmpty();
             assert service.publicApprovedEvents().isEmpty();
             assert VenueCatalog.all().size() == 10;
@@ -73,6 +73,17 @@ public final class EventServiceTest {
             repository.save(privateApproved);
             assert repository.findPublicApproved().equals(List.of(publicApproved));
 
+            Event updatedPublic = new Event(publicApproved.id(), owner.getId(), "Public Updated", "Approved event",
+                    EventType.CONCERT, EventPurpose.TICKETED_EVENT, EventVisibility.PUBLIC, TODAY,
+                    LocalTime.of(18, 0), LocalTime.of(20, 0), 100, VenueCatalog.all().get(5),
+                    EventApprovalStatus.APPROVED, LocalDateTime.now(), publicApproved.ticketCategories());
+            repository.save(updatedPublic);
+            repository.updateStatus(updatedPublic.id(), EventApprovalStatus.PENDING);
+            EventRepository refreshed = new EventRepository(directory);
+            assert refreshed.findByOrganizer(owner.getId()).stream().filter(e->e.id().equals(updatedPublic.id())).count()==1;
+            assert refreshed.findByOrganizer(owner.getId()).stream().filter(e->e.id().equals(updatedPublic.id())).findFirst().orElseThrow()
+                    .approvalStatus()==EventApprovalStatus.PENDING;
+
             EventRepository reloaded = new EventRepository(directory);
             Event persisted = reloaded.findByOrganizer(owner.getId()).stream()
                     .filter(event -> event.id().equals("approved-public")).findFirst().orElseThrow();
@@ -80,31 +91,39 @@ public final class EventServiceTest {
             assert persisted.ticketCategories().get(0).price().compareTo(new BigDecimal("25.50")) == 0;
             assert persisted.description().equals("Approved event");
 
-            expectIllegal(() -> service.submit(owner, draftNamed(" ", EventPurpose.SOCIAL_GATHERING,
+            expectIllegal(() -> service.saveDraft(owner, draftNamed(" ", EventPurpose.SOCIAL_GATHERING,
                     EventVisibility.PUBLIC, List.of())));
-            expectIllegal(() -> service.submit(owner, new EventDraft("Past", "Description", EventType.BIRTHDAY,
+            expectIllegal(() -> service.saveDraft(owner, draftNamed("12345", EventPurpose.SOCIAL_GATHERING,
+                    EventVisibility.PUBLIC, List.of())));
+            expectIllegal(() -> service.saveDraft(owner, new EventDraft("Numeric description", "123456", EventType.BIRTHDAY,
+                    EventPurpose.SOCIAL_GATHERING, EventVisibility.PUBLIC, TODAY, LocalTime.NOON,
+                    LocalTime.of(13,0),10,VenueCatalog.all().get(0),List.of())));
+            expectIllegal(() -> service.saveDraft(owner, new EventDraft("Past", "Description", EventType.BIRTHDAY,
                     EventPurpose.SOCIAL_GATHERING, EventVisibility.PUBLIC, TODAY.minusDays(1),
                     LocalTime.NOON, LocalTime.of(13, 0), 10, VenueCatalog.all().get(0), List.of())));
-            expectIllegal(() -> service.submit(owner, new EventDraft("Bad time", "Description", EventType.BIRTHDAY,
+            expectIllegal(() -> service.saveDraft(owner, new EventDraft("Bad time", "Description", EventType.BIRTHDAY,
                     EventPurpose.SOCIAL_GATHERING, EventVisibility.PUBLIC, TODAY,
                     LocalTime.of(14, 0), LocalTime.of(13, 0), 10, VenueCatalog.all().get(0), List.of())));
-            expectIllegal(() -> service.submit(owner, new EventDraft("Bad attendance", "Description",
+            expectIllegal(() -> service.saveDraft(owner, new EventDraft("Bad attendance", "Description",
                     EventType.BIRTHDAY, EventPurpose.SOCIAL_GATHERING, EventVisibility.PUBLIC, TODAY,
                     LocalTime.NOON, LocalTime.of(13, 0), 0, VenueCatalog.all().get(0), List.of())));
-            expectIllegal(() -> service.submit(owner, new EventDraft("Bad venue", "Description", EventType.CONCERT,
+            expectIllegal(() -> service.saveDraft(owner, new EventDraft("Too many guests", "Description",
+                    EventType.BIRTHDAY, EventPurpose.SOCIAL_GATHERING, EventVisibility.PUBLIC, TODAY,
+                    LocalTime.NOON, LocalTime.of(13,0), 51, VenueCatalog.all().get(0),List.of())));
+            expectIllegal(() -> service.saveDraft(owner, new EventDraft("Bad venue", "Description", EventType.CONCERT,
                     EventPurpose.SOCIAL_GATHERING, EventVisibility.PUBLIC, TODAY, LocalTime.NOON,
                     LocalTime.of(13, 0), 10, new Venue("Commercial venue", VenueType.COMMERCIAL), List.of())));
-            Event organizingWithoutTicketSetup = service.submit(owner, draftNamed("No categories",
+            Event organizingWithoutTicketSetup = service.saveDraft(owner, draftNamed("No categories",
                     EventPurpose.TICKETED_EVENT, EventVisibility.PUBLIC, List.of()));
             assert organizingWithoutTicketSetup.ticketCategories().isEmpty();
-            expectIllegal(() -> service.submit(owner, draftNamed("Social categories", EventPurpose.SOCIAL_GATHERING,
+            expectIllegal(() -> service.saveDraft(owner, draftNamed("Social categories", EventPurpose.SOCIAL_GATHERING,
                     EventVisibility.PUBLIC, List.of(new TicketCategory("VIP", BigDecimal.ZERO, 1)))));
-            expectIllegal(() -> service.submit(owner, draftNamed("Duplicate categories", EventPurpose.TICKETED_EVENT,
+            expectIllegal(() -> service.saveDraft(owner, draftNamed("Duplicate categories", EventPurpose.TICKETED_EVENT,
                     EventVisibility.PUBLIC, List.of(new TicketCategory("Regular", BigDecimal.ONE, 1),
                             new TicketCategory("regular", BigDecimal.TEN, 2)))));
             expectIllegal(() -> new TicketCategory("Negative price", new BigDecimal("-1"), 1));
             expectIllegal(() -> new TicketCategory("Zero quantity", BigDecimal.ONE, 0));
-            expectIllegal(() -> service.submit(owner, new EventDraft("Missing", "Description", EventType.BIRTHDAY,
+            expectIllegal(() -> service.saveDraft(owner, new EventDraft("Missing", "Description", EventType.BIRTHDAY,
                     EventPurpose.SOCIAL_GATHERING, EventVisibility.PUBLIC, null, LocalTime.NOON,
                     LocalTime.of(13, 0), 10, VenueCatalog.all().get(0), List.of())));
 

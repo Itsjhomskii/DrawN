@@ -12,7 +12,7 @@ public record VenueReservation(String id, String eventId, String organizerId, St
                               PaymentStatus paymentStatus, String declineReason) {
     public VenueReservation {
         id = required(id, "Reservation ID");
-        eventId = required(eventId, "Event ID");
+        eventId = eventId == null ? "" : eventId.trim();
         organizerId = required(organizerId, "Organizer ID");
         venueName = required(venueName, "Venue name");
         Objects.requireNonNull(date, "Date cannot be null");

@@ -59,6 +59,15 @@ public final class ReservationRepository {
         write(rows);
     }
 
+    public synchronized void attachEvent(String reservationId, String eventId, String organizerId) throws IOException {
+        VenueReservation current = findById(reservationId);
+        if (!current.organizerId().equals(organizerId)) throw new IllegalArgumentException("Reservation does not belong to this account.");
+        if (!current.eventId().isBlank()) throw new IllegalArgumentException("Reservation is already linked to an event.");
+        update(new VenueReservation(current.id(), eventId, current.organizerId(), current.venueName(), current.date(),
+                current.startTime(), current.endTime(), current.pricing(), current.cost(), current.status(),
+                current.paymentStatus(), current.declineReason()));
+    }
+
     private List<String> read() throws IOException {
         if (!Files.exists(file)) return new ArrayList<>();
         List<String> rows = Files.readAllLines(file, StandardCharsets.UTF_8);

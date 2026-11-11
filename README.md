@@ -6,7 +6,7 @@ DrawN is a console-based Java project for event listings and ticket reservations
 
 ## Development status
 
-The console app supports customer registration by email or Philippine phone number, contact-based login, customer event and venue requests, wallet payments, optional event publishing, and ticket sales. New workflow data is saved additively under `data/` as CSV files; existing account, wallet, and event-submission CSV formats remain readable. Reservation requests stay pending until the admin-side code calls `ReservationService.approve` or `ReservationService.decline`; `pendingRequests` supplies the review queue. The admin dashboard is unchanged. The existing admin-created event list and simple ticket reservation flow remain available in memory for the current run. Payments are simulated through the customer wallet.
+The console app supports customer registration by email or Philippine phone number, contact-based login, customer event and venue requests, wallet payments, optional event publishing, and ticket sales. The customer menu includes profile, event, venue, ticket, organizer, and wallet features. New workflow data is saved additively under `data/` as CSV files; existing account, wallet, and event-submission CSV formats remain readable. Reservation requests stay pending until the admin-side code calls `ReservationService.approve` or `ReservationService.decline`; `pendingRequests` supplies the review queue. The admin dashboard is unchanged. The existing admin-created event list and simple ticket reservation flow remain available in memory for the current run. Payments are simulated through the customer wallet.
 
 Demo admin login: `admin` / `234`. Customer accounts are created through registration. Customer passwords are currently stored as entered in `data/accounts.csv`.
 
@@ -34,4 +34,7 @@ java -ea -cp out drawn.UserModelTest
 java -ea -cp out drawn.RegistrationWalletTest
 java -ea -cp out drawn.service.event.EventServiceTest
 java -ea -cp out drawn.service.event.Phase34WorkflowTest
+java -ea -cp out drawn.service.event.CustomerRecoveryAndEarningsTest
 ```
+
+The organizer commission defaults to 10%. Set the Java system property `drawn.commission.percent` to a value from 0 to 100 to change it, for example `java -Ddrawn.commission.percent=12.5 -cp out drawn.DrawN`.
