@@ -12,12 +12,15 @@ import drawn.storage.ReservationRepository;
 import drawn.storage.TransactionJournal;
 import drawn.model.event.Event;
 import drawn.model.event.EventApprovalStatus;
+import drawn.model.event.ReservationPricing;
+import drawn.model.event.Venue;
 import drawn.storage.EventRepository;
 import java.io.IOException;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
+import java.math.BigDecimal;
 
 /** Full wallet payments for venue reservations, with an append-only audit ledger. */
 public final class PaymentService {
@@ -48,6 +51,59 @@ public final class PaymentService {
                     && !ledger.hasTransaction("venue-payment:" + r.id())) journal.state(operation, "FAILED");
             throw ex;
         }
+    }
+
+    /** Edits the schedule and price of a paid request before administrator approval. */
+    public VenueReservation editPendingVenue(Customer customer, AccountStore.Account account, String reservationId,
+                                             Venue venue, java.time.LocalDate date, java.time.LocalTime start,
+                                             java.time.LocalTime end, ReservationPricing pricing) throws IOException {
+        VenueReservation current = reservations.findById(reservationId);
+        if (!current.organizerId().equals(customer.getId()) || !account.getId().equals(customer.getId()))
+            throw new IllegalArgumentException("Reservation does not belong to this customer.");
+        if (current.status() != BookingStatus.PENDING || !current.eventId().isBlank())
+            throw new IllegalArgumentException("Only unapproved reservations without a linked event can be edited.");
+        if (current.paymentStatus() != PaymentStatus.PAID)
+            throw new IllegalArgumentException("Only paid reservations can be edited.");
+        if (!current.venueName().equals(venue.name()))
+            throw new IllegalArgumentException("The venue cannot be changed after the request is submitted.");
+        if (date.isBefore(java.time.LocalDate.now())) throw new IllegalArgumentException("Reservation date cannot be in the past.");
+        drawn.service.event.ReservationService.validatePricing(start, end, pricing);
+        BigDecimal newCost = drawn.service.event.ReservationService.price(venue, start, end, pricing);
+        BigDecimal difference = newCost.subtract(current.cost());
+        if (difference.signum() > 0 && accounts.findAccount(account.getId()).getWalletBalance().compareTo(difference) < 0)
+            throw new IllegalArgumentException("Insufficient wallet balance for the updated reservation fee.");
+        String operation = "edit-venue:" + UUID.randomUUID();
+        String ledgerId = "venue-edit-payment:" + UUID.randomUUID();
+        List<String> payload = List.of(account.getId(), current.id(), date.toString(), start.toString(), end.toString(),
+                pricing.name(), newCost.toPlainString(), difference.abs().toPlainString(),
+                difference.signum() >= 0 ? "CHARGE" : "REFUND", ledgerId);
+        journal.begin(operation, "VENUE_RESERVATION_EDIT", payload);
+        return completeVenueEdit(account, current, payload, operation);
+    }
+
+    private VenueReservation completeVenueEdit(AccountStore.Account account, VenueReservation current,
+                                               List<String> payload, String operation) throws IOException {
+        BigDecimal amount = new BigDecimal(payload.get(7));
+        String adjustment = payload.get(8);
+        String walletReference = "venue-edit:" + operation;
+        if (amount.signum() > 0) {
+            if (adjustment.equals("CHARGE")) {
+                if (!accounts.hasWalletTransaction(account.getId(), "PAYMENT:" + walletReference))
+                    accounts.charge(account, amount, walletReference);
+            } else if (!accounts.hasWalletTransaction(account.getId(), "REFUND:" + walletReference)) {
+                accounts.refund(account, amount, walletReference);
+            }
+            PaymentStatus transactionStatus = adjustment.equals("CHARGE") ? PaymentStatus.PAID : PaymentStatus.REFUNDED;
+            if (!ledger.hasTransaction(payload.get(9))) ledger.append(new PaymentTransaction(payload.get(9), account.getId(),
+                    current.id(), PaymentPurpose.VENUE_BOOKING, amount, transactionStatus, LocalDateTime.now()));
+        }
+        VenueReservation edited = new VenueReservation(current.id(), current.eventId(), current.organizerId(),
+                current.venueName(), java.time.LocalDate.parse(payload.get(2)), java.time.LocalTime.parse(payload.get(3)),
+                java.time.LocalTime.parse(payload.get(4)), ReservationPricing.valueOf(payload.get(5)),
+                new BigDecimal(payload.get(6)), current.status(), current.paymentStatus(), current.declineReason());
+        reservations.update(edited);
+        journal.state(operation, "COMPLETED");
+        return edited;
     }
 
     private VenueReservation completeVenuePayment(AccountStore.Account account, VenueReservation reservation,
@@ -129,6 +185,11 @@ public final class PaymentService {
                 List<String> p = entry.payload(); AccountStore.Account account = accounts.findAccount(p.get(0));
                 VenueReservation r = reservations.findById(p.get(1));
                 completeVenuePayment(account, r, p.get(3), entry.id());
+            } else if (entry.kind().equals("VENUE_RESERVATION_EDIT")) {
+                List<String> p = entry.payload();
+                AccountStore.Account account = accounts.findAccount(p.get(0));
+                VenueReservation reservation = reservations.findById(p.get(1));
+                completeVenueEdit(account, reservation, p, entry.id());
             } else if (entry.kind().equals("RESERVATION_CANCELLATION")) {
                 List<String> p = entry.payload(); AccountStore.Account account = accounts.findAccount(p.get(0));
                 VenueReservation r = reservations.findById(p.get(1));

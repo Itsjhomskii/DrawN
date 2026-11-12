@@ -35,15 +35,15 @@
     -fx-border-radius: 7;
 }
 .primary-button {
-    -fx-background-color: #202622;
-    -fx-text-fill: #FFFFFF;
-    -fx-border-color: #202622;
+    -fx-background-color: #9DB8A2;
+    -fx-text-fill: #202622;
+    -fx-border-color: #9DB8A2;
     -fx-font-weight: 700;
     -fx-background-radius: 8;
     -fx-border-radius: 8;
     -fx-padding: 11 16;
 }
-.primary-button:hover { -fx-background-color: #39423D; -fx-border-color: #39423D; }
+.primary-button:hover { -fx-background-color: #89A58E; -fx-border-color: #89A58E; }
 .primary-button:focused { -fx-border-color: #557A61; }
 .secondary-button {
     -fx-background-color: #FFFFFF;
@@ -279,6 +279,15 @@
     -fx-text-fill: #355642;
     -fx-border-color: #E5EEE5;
 }
+.venue-flow-primary {
+    -fx-background-color: #9DB8A2;
+    -fx-text-fill: #202622;
+    -fx-border-color: #9DB8A2;
+    -fx-font-weight: 700;
+    -fx-padding: 8 16;
+}
+.venue-flow-primary:hover { -fx-background-color: #89A58E; -fx-border-color: #89A58E; }
+.venue-cost-breakdown { -fx-padding: 10 12; -fx-background-color: #F7F8F7; -fx-background-radius: 8; }
 .create-event-button:hover { -fx-background-color: #D8E5D9; -fx-border-color: #D8E5D9; }
 .empty-state { -fx-alignment: center; -fx-padding: 32; }
 .empty-state-bubble {
@@ -306,6 +315,8 @@
 .dialog-pane .content.label { -fx-text-fill: #5E6862; }
 .dialog-pane .button { -fx-background-color: #FFFFFF; -fx-text-fill: #202622; -fx-border-color: #C9D0CA; }
 .dialog-pane .button:hover { -fx-background-color: #F7F8F7; }
+.dialog-pane .venue-flow-primary { -fx-background-color: #9DB8A2; -fx-text-fill: #202622; -fx-border-color: #9DB8A2; -fx-font-weight: 700; }
+.dialog-pane .venue-flow-primary:hover { -fx-background-color: #89A58E; -fx-border-color: #89A58E; }
 .date-picker, .combo-box, .choice-box, .spinner, .text-field, .password-field {
     -fx-background-color: #FFFFFF;
     -fx-text-fill: #202622;

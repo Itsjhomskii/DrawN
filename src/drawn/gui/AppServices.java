@@ -17,6 +17,7 @@ import drawn.storage.PrivateEventAccessRepository;
 import drawn.storage.ReservationRepository;
 import drawn.storage.TicketRepository;
 import drawn.storage.TransactionJournal;
+import drawn.storage.VenueReceiptRepository;
 
 import java.io.IOException;
 import java.nio.file.Path;
@@ -33,6 +34,7 @@ public final class AppServices {
     private final PrivateEventAccessRepository privateEventAccess;
     private final CustomerVenueWorkflowService venueWorkflow;
     private final CustomerEventCreationService eventCreationService;
+    private final VenueReceiptRepository venueReceipts;
 
     public AppServices(Path dataDirectory) {
         accounts = new AccountStore(dataDirectory);
@@ -40,6 +42,7 @@ public final class AppServices {
         ReservationRepository reservations = new ReservationRepository(dataDirectory);
         PaymentRepository payments = new PaymentRepository(dataDirectory);
         TicketRepository tickets = new TicketRepository(dataDirectory);
+        venueReceipts = new VenueReceiptRepository(dataDirectory);
         TransactionJournal journal = new TransactionJournal(dataDirectory);
         PaymentService payment = new PaymentService(accounts, reservations, payments, journal, events);
         eventService = new EventService(events, reservations, tickets, payments, java.time.Clock.systemDefaultZone());
@@ -74,6 +77,7 @@ public final class AppServices {
     public PrivateEventAccessRepository privateEventAccess() { return privateEventAccess; }
     public CustomerVenueWorkflowService venueWorkflow() { return venueWorkflow; }
     public CustomerEventCreationService eventCreationService() { return eventCreationService; }
+    public VenueReceiptRepository venueReceipts() { return venueReceipts; }
     public java.util.List<AccountStore.Transaction> walletTransactions(AccountStore.Account account) throws IOException {
         return accounts.loadTransactions(account.getId());
     }

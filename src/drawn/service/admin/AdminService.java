@@ -6,8 +6,8 @@ import java.util.List;
 
 /** Session-scoped admin login and demo events for the separate admin GUI. */
 public final class AdminService {
-    private static final String ADMIN_USERNAME = "admin";
-    private static final String ADMIN_PASSWORD = "234";
+    private static final String ADMIN_USERNAME = "admin@drawn.com";
+    private static final String ADMIN_PASSWORD = "admin";
 
     private final List<LegacyEvent> events = new ArrayList<>();
 

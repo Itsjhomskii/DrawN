@@ -35,8 +35,8 @@ import java.util.Scanner;
 
 /** Console entry point for the DrawN event management and ticketing app. */
 public final class DrawN {
-    private static final String ADMIN_USERNAME = "admin";
-    private static final String ADMIN_PASSWORD = "234";
+    private static final String ADMIN_USERNAME = "admin@drawn.com";
+    private static final String ADMIN_PASSWORD = "admin";
 
     private final Scanner input = new Scanner(System.in);
     final List<LegacyEvent> events = new ArrayList<>();
@@ -105,7 +105,7 @@ public final class DrawN {
     }
 
     private void login() {
-        String contact = readRequiredText("Email address or phone number (admin for admin login): ");
+        String contact = readRequiredText("Email address or phone number: ");
         String password = readPassword("Password: ");
         if (contact.equalsIgnoreCase(ADMIN_USERNAME) && password.equals(ADMIN_PASSWORD)) {
             System.out.println("Welcome, admin!");

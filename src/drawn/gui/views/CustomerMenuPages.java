@@ -91,8 +91,7 @@ final class CustomerMenuPages {
         HBox filters = new HBox(10, search, category, eligibility);
         filters.setAlignment(Pos.CENTER_LEFT);
         HBox.setHgrow(search, Priority.ALWAYS);
-        FlowPane cards = new FlowPane(12, 12);
-        cards.setPrefWrapLength(1000);
+        GridPane cards = twoColumnGrid();
         Runnable refresh = () -> {
             String query = search.getText() == null ? "" : search.getText().trim().toLowerCase(java.util.Locale.ROOT);
             String selectedCategory = category.getValue();
@@ -107,8 +106,17 @@ final class CustomerMenuPages {
                     .filter(v -> selectedCategory == null || selectedCategory.equals("All categories")
                             || VenueCatalog.categoryOf(v).equals(selectedCategory))
                     .filter(v -> selectedPurpose == null || v.supports(selectedPurpose)).toList();
-            cards.getChildren().setAll(matches.stream().map(this::venueCard).toList());
-            if (matches.isEmpty()) cards.getChildren().add(emptyState("No venues match those filters."));
+            cards.getChildren().clear();
+            if (matches.isEmpty()) {
+                Node empty = emptyState("No venues match those filters.");
+                cards.add(empty, 0, 0, 2, 1);
+            } else {
+                for (int i = 0; i < matches.size(); i++) {
+                    VBox card = venueCard(matches.get(i));
+                    cards.add(card, i % 2, i / 2);
+                    GridPane.setHgrow(card, Priority.ALWAYS);
+                }
+            }
         };
         search.textProperty().addListener((o,a,b) -> { venueSearchText = b == null ? "" : b; refresh.run(); });
         category.valueProperty().addListener((o,a,b) -> { venueCategoryFilter = b == null ? "All categories" : b; refresh.run(); });
@@ -121,8 +129,7 @@ final class CustomerMenuPages {
 
     private VBox venueCard(Venue venue) {
         VBox card = dataCard();
-        card.setPrefWidth(310);
-        card.setMinWidth(250);
+        card.setMaxWidth(Double.MAX_VALUE);
         String eligibility = venue.type() == VenueType.BOTH ? "Social and ticketed events"
                 : venue.type() == VenueType.COMMERCIAL ? "Ticketed events" : "Social gatherings";
         card.getChildren().addAll(title(venue.name()),
@@ -189,16 +196,27 @@ final class CustomerMenuPages {
         VBox content = new VBox(14, title("Venue Reservations"), body("Request and pay for a venue. Administrator approval remains a separate step."));
         content.getChildren().add(primary("Request a Venue", () -> navigate.accept("Explore Venues")));
         if (records.isEmpty()) content.getChildren().add(emptyState("You do not have venue reservations yet."));
+        GridPane cards = twoColumnGrid();
+        int index = 0;
         for (VenueReservation r : records) {
             VBox card = dataCard();
             card.getChildren().addAll(title(r.venueName()), body(CustomerText.reservationSchedule(r)),
-                    body("Fee: PHP " + money(r.cost()) + " • Reservation: " + CustomerText.words(r.status()) + " • Payment: " + CustomerText.words(r.paymentStatus())));
+                    body("Total: PHP " + money(r.cost())),
+                    body("Reservation: " + CustomerText.words(r.status()) + " • Payment: " + CustomerText.words(r.paymentStatus())));
             if (!r.eventId().isBlank()) card.getChildren().add(body("Linked event: " + r.eventId()));
             if (!r.declineReason().isBlank()) card.getChildren().add(body("Reason: " + r.declineReason()));
+            HBox actions = new HBox(8);
+            actions.getChildren().add(secondary("View Details", () -> showReservationDetails(r)));
+            if (isEditable(r)) actions.getChildren().add(secondary("Edit", () -> editReservation(r)));
             if (r.status() != BookingStatus.CANCELLED && r.status() != BookingStatus.DECLINED && r.status() != BookingStatus.EXPIRED)
-                card.getChildren().add(secondary("Cancel Reservation", () -> cancelReservation(r)));
-            content.getChildren().add(card);
+                actions.getChildren().add(secondary("Cancel", () -> cancelReservation(r)));
+            actions.setAlignment(Pos.CENTER_LEFT);
+            card.getChildren().add(actions);
+            cards.add(card, index % 2, index / 2);
+            GridPane.setHgrow(card, Priority.ALWAYS);
+            index++;
         }
+        if (!records.isEmpty()) content.getChildren().add(cards);
         return pageFrame("Venue Reservations", content);
     }
 
@@ -259,61 +277,65 @@ final class CustomerMenuPages {
 
     private void requestVenue(Venue selectedVenue) {
         Dialog<ButtonType> dialog = new Dialog<>(); dialog.setTitle("Request a venue");
-        ButtonType submit = new ButtonType("Review and Pay", ButtonBar.ButtonData.OK_DONE);
-        ButtonType back = new ButtonType("Back to Venues", ButtonBar.ButtonData.BACK_PREVIOUS);
-        dialog.getDialogPane().getButtonTypes().addAll(submit, back, ButtonType.CANCEL);
+        ButtonType continueButton = new ButtonType("Continue", ButtonBar.ButtonData.OK_DONE);
+        dialog.getDialogPane().getButtonTypes().addAll(continueButton, ButtonType.CANCEL);
         ComboBox<EventPurpose> purpose = new ComboBox<>();
         purpose.getItems().setAll(java.util.Arrays.stream(EventPurpose.values()).filter(selectedVenue::supports).toList());
+        purpose.setMaxWidth(Double.MAX_VALUE);
         purpose.setConverter(converter(CustomerText::words)); purpose.getSelectionModel().selectFirst();
         VBox selectedVenueSummary = new VBox(4, title(selectedVenue.name()),
                 body(CustomerText.words(VenueCatalog.categoryOf(selectedVenue)) + " • "
                         + (selectedVenue.type() == VenueType.BOTH ? "Social and ticketed events"
                         : selectedVenue.type() == VenueType.COMMERCIAL ? "Ticketed events" : "Social gatherings")),
                 body("Capacity: " + (selectedVenue.capacity() == Integer.MAX_VALUE ? "Not specified" : selectedVenue.capacity() + " guests")));
-        DatePicker date = new DatePicker(LocalDate.now().plusDays(1)); date.setDayCellFactory(picker -> new DateCell() { @Override public void updateItem(LocalDate d, boolean empty) { super.updateItem(d,empty); setDisable(empty || d.isBefore(LocalDate.now())); }});
+        DatePicker date = new DatePicker(LocalDate.now().plusDays(1)); date.setMaxWidth(Double.MAX_VALUE); date.setDayCellFactory(picker -> new DateCell() { @Override public void updateItem(LocalDate d, boolean empty) { super.updateItem(d,empty); setDisable(empty || d.isBefore(LocalDate.now())); }});
         TimeInput start = new TimeInput("10:00", "AM"), end = new TimeInput("12:00", "PM");
-        HBox startRow = new HBox(12, label("Start time"), start);
-        HBox endRow = new HBox(12, label("End time"), end);
-        startRow.setAlignment(Pos.CENTER_LEFT);
-        endRow.setAlignment(Pos.CENTER_LEFT);
-        ComboBox<ReservationPricing> pricing = new ComboBox<>(); pricing.getItems().setAll(ReservationPricing.values()); pricing.setConverter(converter(CustomerText::words)); pricing.getSelectionModel().selectFirst();
+        start.setMaxWidth(Double.MAX_VALUE); end.setMaxWidth(Double.MAX_VALUE);
+        Label startLabel = label("Start time"), endLabel = label("End time");
+        ComboBox<ReservationPricing> pricing = new ComboBox<>(); pricing.getItems().setAll(ReservationPricing.values()); pricing.setMaxWidth(Double.MAX_VALUE); pricing.setConverter(converter(CustomerText::words)); pricing.getSelectionModel().selectFirst();
         GridPane fields = formGrid();
         fields.addRow(0,label("Event purpose"),purpose); fields.addRow(1,label("Selected venue"),selectedVenueSummary); fields.addRow(2,label("Date"),date);
         Label pricingLabel = label("Pricing");
-        Label total = title(""); Label error = AuthenticationFormSupport.errorLabel();
+        Label error = AuthenticationFormSupport.errorLabel();
+        GridPane costBreakdown = new GridPane();
+        costBreakdown.setHgap(18); costBreakdown.setVgap(5);
+        costBreakdown.getStyleClass().add("venue-cost-breakdown");
+        Label venueFeeLabel = body("Venue fee");
+        Label serviceFeeLabel = body("Service fee");
+        Label totalLabel = title("Total due");
+        Label venueFee = body("—"), serviceFee = body("PHP 0.00");
+        Label total = title("—");
+        costBreakdown.addRow(0, venueFeeLabel, venueFee);
+        costBreakdown.addRow(1, serviceFeeLabel, serviceFee);
+        costBreakdown.addRow(2, totalLabel, total);
         Runnable updateTimeRows = () -> {
             boolean hourly = pricing.getValue() == ReservationPricing.HOURLY;
-            // Remove the complete time rows for half-day bookings, including their labels
-            // and GridPane row gaps. Merely hiding the inputs leaves empty-looking rows.
-            fields.getChildren().removeAll(startRow, endRow, pricingLabel, pricing, total, error);
-            int pricingRow = 3;
+            fields.getChildren().removeAll(startLabel, start, endLabel, end, pricingLabel, pricing);
+            int row = 3;
             if (hourly) {
-                fields.add(startRow, 0, 3, 2, 1);
-                fields.add(endRow, 0, 4, 2, 1);
-                pricingRow = 5;
+                fields.addRow(row++, startLabel, start);
+                fields.addRow(row++, endLabel, end);
             }
-            fields.add(pricingLabel, 0, pricingRow);
-            fields.add(pricing, 1, pricingRow);
-            fields.add(total, 0, pricingRow + 1, 2, 1);
-            fields.add(error, 0, pricingRow + 2, 2, 1);
+            fields.addRow(row, pricingLabel, pricing);
         };
         Runnable quote = () -> {
             try {
                 LocalTime[] times = selectedTimes(pricing.getValue(), start, end);
-                total.setText("Fee: PHP " + money(ReservationService.price(selectedVenue, times[0], times[1], pricing.getValue())));
+                BigDecimal amount = ReservationService.price(selectedVenue, times[0], times[1], pricing.getValue());
+                venueFee.setText("PHP " + money(amount));
+                total.setText("PHP " + money(amount));
                 error.setText("");
-            } catch (RuntimeException ex) { total.setText("Fee: —"); error.setText(message(ex)); }
+            } catch (RuntimeException ex) { venueFee.setText("—"); total.setText("—"); error.setText(message(ex)); }
         };
         start.onChange(quote); end.onChange(quote);
         pricing.valueProperty().addListener((o,a,b)->{updateTimeRows.run();quote.run();});
         updateTimeRows.run(); quote.run();
-        dialog.getDialogPane().setContent(fields); styleDialog(dialog);
-        dialog.getDialogPane().lookupButton(back).addEventFilter(ActionEvent.ACTION, event -> {
-            event.consume();
-            dialog.close();
-            navigate.accept("Explore Venues");
-        });
-        dialog.getDialogPane().lookupButton(submit).addEventFilter(ActionEvent.ACTION, action -> {
+        VBox form = new VBox(14, fields, title("Cost breakdown"), costBreakdown, error);
+        form.setPadding(new Insets(4));
+        dialog.getDialogPane().setContent(form); styleDialog(dialog);
+        Button continueAction = (Button) dialog.getDialogPane().lookupButton(continueButton);
+        continueAction.getStyleClass().add("venue-flow-primary");
+        dialog.getDialogPane().lookupButton(continueButton).addEventFilter(ActionEvent.ACTION, action -> {
             action.consume();
             try {
                 Venue validatedVenue = VenueCatalog.all().stream().filter(v -> v.equals(selectedVenue)).findFirst()
@@ -321,16 +343,234 @@ final class CustomerMenuPages {
                 if (purpose.getValue() == null || !validatedVenue.supports(purpose.getValue()) || date.getValue()==null)
                     throw new IllegalArgumentException("Choose an eligible event purpose and date.");
                 LocalTime[] times = selectedTimes(pricing.getValue(), start, end);
-                BigDecimal amount=ReservationService.price(validatedVenue,times[0],times[1],pricing.getValue());
-                if(session.account().getWalletBalance().compareTo(amount)<0) throw new IllegalArgumentException("Insufficient wallet balance.");
-                if(confirm("Pay PHP " + money(amount) + " from your wallet?")) {
-                    var button=dialog.getDialogPane().lookupButton(submit);button.setDisable(true);
-                    services.venueWorkflow().requestAndPay(session.customer(),session.account(),validatedVenue,date.getValue(),times[0],times[1],pricing.getValue());
-                    dialog.setResult(submit);dialog.close();info("Payment complete. Reservation status: PENDING • Payment status: PAID.");navigate.accept("Venue Reservations");
-                }
+                BigDecimal amount = ReservationService.price(validatedVenue, times[0], times[1], pricing.getValue());
+                if (session.account().getWalletBalance().compareTo(amount) < 0)
+                    throw new IllegalArgumentException("Insufficient wallet balance.");
+                showVenueReceipt(dialog, validatedVenue, purpose.getValue(), date.getValue(), times[0], times[1], pricing.getValue(), amount);
             } catch(Exception ex){error.setText(message(ex));}
         });
         dialog.showAndWait();
+    }
+
+    private void showVenueReceipt(Dialog<ButtonType> requestDialog, Venue venue, EventPurpose purpose, LocalDate date,
+                                  LocalTime start, LocalTime end, ReservationPricing pricing, BigDecimal amount) {
+        Dialog<ButtonType> receiptDialog = new Dialog<>();
+        receiptDialog.setTitle("Venue reservation receipt");
+        ButtonType reserveAndPay = new ButtonType("Reserve and Pay", ButtonBar.ButtonData.OK_DONE);
+        receiptDialog.getDialogPane().getButtonTypes().addAll(reserveAndPay, ButtonType.CANCEL);
+        BigDecimal duration = BigDecimal.valueOf(java.time.Duration.between(start, end).toMinutes())
+                .divide(BigDecimal.valueOf(60), 2, java.math.RoundingMode.HALF_UP);
+        String durationText = pricing == ReservationPricing.HOURLY ? duration.toPlainString() + " hours"
+                : "6 hours (half day)";
+        BigDecimal rate = rateFor(venue, pricing);
+        String rateUnit = pricing == ReservationPricing.HOURLY ? " per hour" : " per half day";
+        VBox details = new VBox(10,
+                title("Receipt preview"),
+                body("Customer: " + session.customer().getName()),
+                body("Venue: " + venue.name()),
+                body("Event purpose: " + CustomerText.words(purpose)),
+                body("Date: " + date),
+                body("Time: " + CustomerText.time(start) + "–" + CustomerText.time(end)),
+                body("Pricing: " + CustomerText.words(pricing)),
+                body("Duration: " + durationText),
+                body("Rate: PHP " + money(rate) + rateUnit),
+                new Separator(),
+                body("Venue fee: PHP " + money(amount)),
+                body("Service fee: PHP 0.00"),
+                title("Total due: PHP " + money(amount)));
+        Label paymentError = AuthenticationFormSupport.errorLabel();
+        VBox content = new VBox(12, details, paymentError);
+        content.setPadding(new Insets(6));
+        receiptDialog.getDialogPane().setContent(content);
+        styleDialog(receiptDialog);
+        Button pay = (Button) receiptDialog.getDialogPane().lookupButton(reserveAndPay);
+        pay.getStyleClass().add("venue-flow-primary");
+        pay.addEventFilter(ActionEvent.ACTION, action -> {
+            action.consume();
+            pay.setDisable(true);
+            VenueReservation paid;
+            try {
+                paid = services.venueWorkflow().requestAndPay(session.customer(), session.account(),
+                        venue, date, start, end, pricing);
+            } catch (Exception ex) {
+                pay.setDisable(false);
+                paymentError.setText(message(ex));
+                return;
+            }
+            try {
+                saveVenueReceipt(paid.id(), venue, purpose, date, start, end, pricing, duration, amount, "PAID");
+            } catch (IOException ex) {
+                receiptDialog.close(); requestDialog.close();
+                error("Payment succeeded, but the receipt could not be saved: " + message(ex));
+                navigate.accept("Venue Reservations");
+                return;
+            }
+            receiptDialog.setResult(reserveAndPay);
+            receiptDialog.close();
+            requestDialog.close();
+            info("Payment complete. Your receipt has been saved.");
+            navigate.accept("Venue Reservations");
+        });
+        Button cancel = (Button) receiptDialog.getDialogPane().lookupButton(ButtonType.CANCEL);
+        cancel.addEventFilter(ActionEvent.ACTION, action -> {
+            try { saveVenueReceipt("", venue, purpose, date, start, end, pricing, duration, amount, "CANCELLED"); }
+            catch (IOException ex) { error("Could not save receipt: " + message(ex)); }
+            requestDialog.close();
+        });
+        receiptDialog.showAndWait();
+    }
+
+    private boolean isEditable(VenueReservation reservation) {
+        return reservation.status() == BookingStatus.PENDING && reservation.eventId().isBlank()
+                && reservation.paymentStatus() == PaymentStatus.PAID;
+    }
+
+    private void showReservationDetails(VenueReservation reservation) {
+        Venue venue = venueFor(reservation);
+        Dialog<ButtonType> dialog = new Dialog<>();
+        dialog.setTitle("Reservation details");
+        dialog.getDialogPane().getButtonTypes().add(ButtonType.CLOSE);
+        VBox details = new VBox(10,
+                title(reservation.venueName()),
+                body("Reservation ID: " + reservation.id()),
+                body("Date: " + reservation.date()),
+                body("Schedule: " + CustomerText.reservationSchedule(reservation)),
+                body("Pricing: " + CustomerText.words(reservation.pricing())),
+                body("Reservation status: " + CustomerText.words(reservation.status())),
+                body("Payment status: " + CustomerText.words(reservation.paymentStatus())),
+                new Separator(),
+                body("Rate: PHP " + money(rateFor(venue, reservation.pricing()))
+                        + (reservation.pricing() == ReservationPricing.HOURLY ? " per hour" : " per half day")),
+                body("Venue fee: PHP " + money(reservation.cost())),
+                body("Service fee: PHP 0.00"),
+                title("Total: PHP " + money(reservation.cost())),
+                body("Venue capacity: " + (venue.capacity() == Integer.MAX_VALUE ? "Not specified" : venue.capacity() + " guests")));
+        if (!reservation.eventId().isBlank()) details.getChildren().add(body("Linked event: " + reservation.eventId()));
+        if (!reservation.declineReason().isBlank()) details.getChildren().add(body("Reason: " + reservation.declineReason()));
+        details.setPadding(new Insets(6));
+        dialog.getDialogPane().setContent(details);
+        styleDialog(dialog);
+        dialog.showAndWait();
+    }
+
+    private void editReservation(VenueReservation reservation) {
+        if (!isEditable(reservation)) {
+            error("Only unapproved venue reservations can be edited.");
+            return;
+        }
+        Venue venue = venueFor(reservation);
+        Dialog<ButtonType> dialog = new Dialog<>();
+        dialog.setTitle("Edit venue reservation");
+        ButtonType save = new ButtonType("Save Changes", ButtonBar.ButtonData.OK_DONE);
+        dialog.getDialogPane().getButtonTypes().addAll(save, ButtonType.CANCEL);
+        DatePicker date = new DatePicker(reservation.date());
+        date.setDayCellFactory(picker -> new DateCell() {
+            @Override public void updateItem(LocalDate day, boolean empty) {
+                super.updateItem(day, empty);
+                setDisable(empty || day.isBefore(LocalDate.now()));
+            }
+        });
+        TimeInput start = timeInput(reservation.startTime());
+        TimeInput end = timeInput(reservation.endTime());
+        ComboBox<ReservationPricing> pricing = new ComboBox<>();
+        pricing.getItems().setAll(ReservationPricing.values());
+        pricing.setConverter(converter(CustomerText::words));
+        pricing.setValue(reservation.pricing());
+        GridPane fields = formGrid();
+        fields.addRow(0, label("Venue"), body(venue.name()));
+        fields.addRow(1, label("Date"), date);
+        Label startLabel = label("Start time"), endLabel = label("End time");
+        fields.addRow(2, startLabel, start);
+        fields.addRow(3, endLabel, end);
+        fields.addRow(4, label("Pricing"), pricing);
+        Label fee = body("—"), total = title("—"), message = AuthenticationFormSupport.errorLabel();
+        Runnable updateQuote = () -> {
+            try {
+                LocalTime[] times = selectedTimes(pricing.getValue(), start, end);
+                BigDecimal amount = ReservationService.price(venue, times[0], times[1], pricing.getValue());
+                fee.setText("PHP " + money(amount));
+                total.setText("PHP " + money(amount));
+                message.setText("");
+            } catch (RuntimeException ex) { fee.setText("—"); total.setText("—"); message.setText(message(ex)); }
+        };
+        Runnable updatePricingRows = () -> {
+            boolean hourly = pricing.getValue() == ReservationPricing.HOURLY;
+            startLabel.setVisible(hourly); startLabel.setManaged(hourly);
+            start.setVisible(hourly); start.setManaged(hourly);
+            endLabel.setVisible(hourly); endLabel.setManaged(hourly);
+            end.setVisible(hourly); end.setManaged(hourly);
+            updateQuote.run();
+        };
+        start.onChange(updateQuote); end.onChange(updateQuote);
+        pricing.valueProperty().addListener((o, a, b) -> updatePricingRows.run());
+        GridPane breakdown = new GridPane(); breakdown.setHgap(18); breakdown.setVgap(5);
+        breakdown.addRow(0, body("Venue fee"), fee);
+        breakdown.addRow(1, body("Service fee"), body("PHP 0.00"));
+        breakdown.addRow(2, title("Total due"), total);
+        updatePricingRows.run();
+        VBox content = new VBox(12, fields, title("Cost breakdown"), breakdown, message);
+        content.setPadding(new Insets(6));
+        dialog.getDialogPane().setContent(content);
+        styleDialog(dialog);
+        Button saveButton = (Button) dialog.getDialogPane().lookupButton(save);
+        saveButton.getStyleClass().add("venue-flow-primary");
+        saveButton.addEventFilter(ActionEvent.ACTION, action -> {
+            action.consume();
+            try {
+                if (date.getValue() == null) throw new IllegalArgumentException("Choose a reservation date.");
+                LocalTime[] times = selectedTimes(pricing.getValue(), start, end);
+                BigDecimal newCost = ReservationService.price(venue, times[0], times[1], pricing.getValue());
+                BigDecimal adjustment = newCost.subtract(reservation.cost());
+                String paymentChange = adjustment.signum() > 0 ? " An additional PHP " + money(adjustment) + " will be charged."
+                        : adjustment.signum() < 0 ? " PHP " + money(adjustment.abs()) + " will be refunded to your wallet." : "";
+                if (!confirm("Save these changes?" + paymentChange)) return;
+                VenueReservation edited = services.paymentService().editPendingVenue(session.customer(), session.account(), reservation.id(), venue,
+                        date.getValue(), times[0], times[1], pricing.getValue());
+                dialog.close();
+                try {
+                    saveEditedVenueReceipt(edited);
+                    info("Reservation updated and the revised receipt has been saved.");
+                } catch (IOException ex) {
+                    error("Reservation updated, but the revised receipt could not be saved: " + message(ex));
+                }
+                navigate.accept("Venue Reservations");
+            } catch (Exception ex) { message.setText(message(ex)); }
+        });
+        dialog.showAndWait();
+    }
+
+    private static TimeInput timeInput(LocalTime time) {
+        int hour = time.getHour() % 12;
+        if (hour == 0) hour = 12;
+        return new TimeInput(String.format(java.util.Locale.ROOT, "%02d:%02d", hour, time.getMinute()),
+                time.getHour() < 12 ? "AM" : "PM");
+    }
+
+    private void saveEditedVenueReceipt(VenueReservation reservation) throws IOException {
+        BigDecimal duration = BigDecimal.valueOf(java.time.Duration.between(reservation.startTime(), reservation.endTime()).toMinutes())
+                .divide(BigDecimal.valueOf(60), 2, java.math.RoundingMode.HALF_UP);
+        services.venueReceipts().save(new drawn.storage.VenueReceiptRepository.Receipt(
+                java.util.UUID.randomUUID().toString(), reservation.id(), session.customer().getId(), reservation.venueName(),
+                "Not specified", reservation.date(), reservation.startTime(), reservation.endTime(), reservation.pricing(),
+                duration, rateFor(venueFor(reservation), reservation.pricing()), reservation.cost(), BigDecimal.ZERO.setScale(2),
+                reservation.cost(), "UPDATED", java.time.LocalDateTime.now()));
+    }
+
+    private void saveVenueReceipt(String reservationId, Venue venue, EventPurpose purpose, LocalDate date,
+                                  LocalTime start, LocalTime end, ReservationPricing pricing, BigDecimal duration,
+                                  BigDecimal amount, String status) throws IOException {
+        services.venueReceipts().save(new drawn.storage.VenueReceiptRepository.Receipt(
+                java.util.UUID.randomUUID().toString(), reservationId, session.customer().getId(), venue.name(),
+                purpose.name(), date, start, end, pricing, duration, rateFor(venue, pricing), amount, BigDecimal.ZERO.setScale(2), amount,
+                status, java.time.LocalDateTime.now()));
+    }
+
+    private static BigDecimal rateFor(Venue venue, ReservationPricing pricing) {
+        return switch (pricing) {
+            case HOURLY -> venue.hourlyRate();
+            case HALF_DAY_MORNING -> venue.morningRate();
+            case HALF_DAY_AFTERNOON -> venue.afternoonRate();
+        };
     }
 
     private void showEventForm(List<VenueReservation> eligible) {
@@ -407,7 +647,8 @@ final class CustomerMenuPages {
     private VBox dataCard(){VBox box=new VBox(10);box.getStyleClass().add("event-card");box.setMaxWidth(Double.MAX_VALUE);return box;}
     private VBox emptyState(String message){VBox box=new VBox(8,title("Nothing here yet"),body(message));box.setAlignment(Pos.CENTER);box.setPadding(new Insets(44));box.getStyleClass().add("empty-state");return box;}
     private static VBox row(String label,Node field){return new VBox(5,new Label(label),field);}
-    private static GridPane formGrid(){GridPane p=new GridPane();p.setHgap(12);p.setVgap(10);p.setPadding(new Insets(12));ColumnConstraints a=new ColumnConstraints();a.setMinWidth(130);ColumnConstraints b=new ColumnConstraints();b.setHgrow(Priority.ALWAYS);p.getColumnConstraints().addAll(a,b);return p;}
+    private static GridPane formGrid(){GridPane p=new GridPane();p.setHgap(16);p.setVgap(12);p.setPadding(new Insets(12));ColumnConstraints a=new ColumnConstraints();a.setMinWidth(155);a.setPrefWidth(160);ColumnConstraints b=new ColumnConstraints();b.setHgrow(Priority.ALWAYS);b.setFillWidth(true);p.getColumnConstraints().addAll(a,b);return p;}
+    private static GridPane twoColumnGrid(){GridPane grid=new GridPane();grid.setHgap(16);grid.setVgap(16);ColumnConstraints left=new ColumnConstraints();left.setPercentWidth(50);left.setHgrow(Priority.ALWAYS);left.setFillWidth(true);ColumnConstraints right=new ColumnConstraints();right.setPercentWidth(50);right.setHgrow(Priority.ALWAYS);right.setFillWidth(true);grid.getColumnConstraints().setAll(left,right);return grid;}
     private static Label label(String text){return new Label(text);}
     private static Label title(String text){Label l=new Label(text);l.getStyleClass().add("event-card-title");l.setWrapText(true);return l;}
     private static Label body(String text){Label l=new Label(text==null?"—":text);l.getStyleClass().add("secondary-text");l.setWrapText(true);return l;}

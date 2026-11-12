@@ -8,7 +8,7 @@ DrawN is a Java event listing and ticketing project with a preserved console wor
 
 The console app supports customer registration by email or Philippine phone number, contact-based login, customer event and venue requests, wallet payments, optional event publishing, and ticket sales. The customer menu includes profile, event, venue, ticket, organizer, and wallet features. New workflow data is saved additively under `data/` as CSV files; existing account, wallet, and event-submission CSV formats remain readable. Reservation requests stay pending until the admin-side code calls `ReservationService.approve` or `ReservationService.decline`; `pendingRequests` supplies the review queue. The admin dashboard is unchanged. The existing admin-created event list and simple ticket reservation flow remain available in memory for the current run. Payments are simulated through the customer wallet.
 
-Demo admin login: `admin` / `234`. Customer accounts are created through registration. Customer passwords are currently stored as entered in `data/accounts.csv`.
+Admin login: `admin@drawn.com` / `admin`. Use the main login page for both admins and customers. Customer accounts are created through registration. Customer passwords are currently stored as entered in `data/accounts.csv`.
 
 ## Requirements
 

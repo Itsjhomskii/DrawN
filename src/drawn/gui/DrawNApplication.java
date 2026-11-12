@@ -3,6 +3,9 @@ package drawn.gui;
 import drawn.gui.views.LoginView;
 import drawn.gui.views.MainShell;
 import drawn.gui.views.RegisterView;
+import drawn.gui.admin.AdminView;
+import drawn.service.admin.AdminService;
+import drawn.model.event.Event;
 import javafx.application.Application;
 import javafx.animation.FadeTransition;
 import javafx.animation.Interpolator;
@@ -17,10 +20,12 @@ import javafx.util.Duration;
 
 import java.io.IOException;
 import java.nio.file.Path;
+import java.util.List;
 
 /** JavaFX customer entry point. The console application remains drawn.DrawN. */
 public final class DrawNApplication extends Application {
     private final AppSession session = new AppSession();
+    private final AdminService adminService = new AdminService();
     private AppServices services;
     private Stage stage;
     private Scene scene;
@@ -46,6 +51,21 @@ public final class DrawNApplication extends Application {
     public void showLogin() { switchAuthForm(new LoginView(this, services, session).view(), false); }
     public void showRegister() { switchAuthForm(new RegisterView(this, services, session).view(), true); }
     public void showShell() { setRootForView(new MainShell(this, services, session).view()); }
+
+    public boolean signInAdmin(String email, String password) {
+        if (!AdminService.isAdminLogin(email, password)) return false;
+        setRootForView(new AdminView(new AdminView.Host() {
+            @Override public List<Event> approvedPublicEvents() throws IOException {
+                return services.eventService().publicApprovedEvents();
+            }
+            @Override public void setRoot(Parent root) { setRootForView(root); }
+            @Override public void logout() { showLogin(); }
+        }, adminService).view());
+        if (!scene.getStylesheets().contains(getClass().getResource("/drawn/gui/admin/admin.css").toExternalForm()))
+            scene.getStylesheets().add(getClass().getResource("/drawn/gui/admin/admin.css").toExternalForm());
+        stage.setMaximized(true);
+        return true;
+    }
 
     private void switchAuthForm(Parent nextRoot, boolean toRegister) {
         if (scene == null) { setRootForView(nextRoot); focusFirstField(nextRoot); return; }

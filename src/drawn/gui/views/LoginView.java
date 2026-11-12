@@ -4,6 +4,7 @@ import drawn.gui.AppServices;
 import drawn.gui.AppSession;
 import drawn.gui.DrawNApplication;
 import drawn.service.customer.CustomerAccessService;
+import drawn.service.admin.AdminService;
 import javafx.geometry.Pos;
 import javafx.scene.Parent;
 import javafx.scene.control.Button;
@@ -76,6 +77,10 @@ public final class LoginView {
     }
 
     private void submit(TextField contact, PasswordInput password, Label error) {
+        if (AdminService.isAdminLogin(contact.getText(), password.text())) {
+            app.signInAdmin(contact.getText(), password.text());
+            return;
+        }
         try {
             CustomerAccessService.AuthenticatedCustomer authenticated = services.customerAccess().authenticate(contact.getText(), password.text());
             session.start(authenticated.account(), authenticated.customer());

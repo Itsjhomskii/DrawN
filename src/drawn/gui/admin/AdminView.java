@@ -25,17 +25,23 @@ import java.util.List;
 import java.util.function.Function;
 
 /** Admin dashboard with session-only events and approved public submissions. */
-final class AdminView {
-    private final AdminApplication app;
+public final class AdminView {
+    public interface Host {
+        List<Event> approvedPublicEvents() throws Exception;
+        void setRoot(Parent root);
+        void logout();
+    }
+
+    private final Host app;
     private final AdminService admin;
     private final BorderPane root = new BorderPane();
 
-    AdminView(AdminApplication app, AdminService admin) {
+    public AdminView(Host app, AdminService admin) {
         this.app = app;
         this.admin = admin;
     }
 
-    Parent view() {
+    public Parent view() {
         root.getStyleClass().add("admin-shell");
         root.setId("admin-dashboard");
         Label brand = new Label("DrawN Admin");
@@ -43,7 +49,7 @@ final class AdminView {
         Button logout = new Button("Log out");
         logout.getStyleClass().add("admin-secondary");
         logout.setId("admin-logout");
-        logout.setOnAction(event -> app.setRoot(new AdminLoginView(app).view()));
+        logout.setOnAction(event -> app.logout());
         HBox bar = new HBox(brand, grow(), logout);
         bar.setAlignment(Pos.CENTER_LEFT);
         bar.getStyleClass().add("admin-topbar");

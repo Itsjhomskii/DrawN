@@ -154,7 +154,7 @@ public final class MainShell {
         Node feed;
         try { List<Event> events=services.publishing().publishedEvents(); feed=events.isEmpty()?emptyState():eventGrid(events); }
         catch(Exception ex){ feed=errorState("Published events could not be loaded: "+ex.getMessage()); }
-        Button create=new Button("", new DashboardIcon("fi fi-rr-add", 23));create.getStyleClass().add("floating-action-button");create.setTooltip(new Tooltip("Create Event"));create.setAccessibleText("Create event");create.setOnAction(e->customerPages.createEvent());
+        Button create=new Button("", new DashboardIcon("fi fi-rr-add", 23));create.getStyleClass().add("floating-action-button");create.setTooltip(new Tooltip("Explore Venues"));create.setAccessibleText("Explore venues");create.setOnAction(e->showPage("Explore Venues"));
         ScaleTransition hoverScale = new ScaleTransition(Duration.millis(140), create);
         hoverScale.setInterpolator(Interpolator.EASE_BOTH);
         create.setOnMouseEntered(e -> animateCreateButton(hoverScale, 1.07));
