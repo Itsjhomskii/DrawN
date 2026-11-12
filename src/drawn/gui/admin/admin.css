@@ -1,0 +1,18 @@
+.admin-shell { -fx-background-color: #f4f6fb; -fx-font-family: "Segoe UI", "Arial"; }
+.admin-topbar { -fx-padding: 18 30; -fx-background-color: white; -fx-border-color: transparent transparent #e6e9f1 transparent; }
+.admin-brand { -fx-font-size: 20px; -fx-font-weight: bold; -fx-text-fill: #182340; }
+.admin-content { -fx-padding: 30 38 38 38; -fx-spacing: 18; }
+.admin-title { -fx-font-size: 28px; -fx-font-weight: bold; -fx-text-fill: #182340; }
+.admin-subtitle, .admin-muted { -fx-font-size: 13px; -fx-text-fill: #69738b; }
+.admin-section { -fx-font-size: 17px; -fx-font-weight: bold; -fx-text-fill: #263653; }
+.admin-card, .admin-login-card { -fx-background-color: white; -fx-background-radius: 14; -fx-border-radius: 14; -fx-border-color: #e5e9f2; -fx-padding: 22; }
+.admin-input { -fx-background-color: #fbfcfe; -fx-border-color: #dce2ed; -fx-border-radius: 7; -fx-background-radius: 7; -fx-padding: 10 12; }
+.admin-primary { -fx-background-color: #5266dc; -fx-text-fill: white; -fx-font-weight: bold; -fx-background-radius: 7; -fx-padding: 10 18; -fx-cursor: hand; }
+.admin-primary:hover { -fx-background-color: #4054c9; }
+.admin-secondary { -fx-background-color: #eef1f8; -fx-text-fill: #34415f; -fx-background-radius: 7; -fx-padding: 9 16; -fx-cursor: hand; }
+.admin-table { -fx-background-color: white; -fx-border-color: #e4e8f0; -fx-border-radius: 9; -fx-background-radius: 9; }
+.admin-scroll { -fx-background: #f4f6fb; -fx-background-color: #f4f6fb; -fx-border-color: transparent; }
+.admin-scroll > .viewport { -fx-background-color: #f4f6fb; }
+.admin-login-card { -fx-spacing: 16; }
+.admin-login-card .admin-title { -fx-font-size: 30px; }
+.admin-eyebrow { -fx-text-fill: #5266dc; -fx-font-size: 11px; -fx-font-weight: bold; }
