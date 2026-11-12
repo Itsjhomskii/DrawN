@@ -115,11 +115,16 @@ public final class ReservationService {
                 .orElseThrow(() -> new IllegalArgumentException("Linked event not found."));
     }
     public static BigDecimal price(Event event, ReservationPricing pricing) {
-        validatePricing(event.startTime(), event.endTime(), pricing);
-        if (pricing == ReservationPricing.HALF_DAY_MORNING) return event.venue().morningRate();
-        if (pricing == ReservationPricing.HALF_DAY_AFTERNOON) return event.venue().afternoonRate();
-        long minutes = Duration.between(event.startTime(), event.endTime()).toMinutes();
-        return event.venue().hourlyRate().multiply(BigDecimal.valueOf(minutes))
+        return price(event.venue(), event.startTime(), event.endTime(), pricing);
+    }
+    public static BigDecimal price(drawn.model.event.Venue venue, LocalTime start, LocalTime end,
+                                   ReservationPricing pricing) {
+        Objects.requireNonNull(venue); Objects.requireNonNull(pricing);
+        validatePricing(start, end, pricing);
+        if (pricing == ReservationPricing.HALF_DAY_MORNING) return venue.morningRate();
+        if (pricing == ReservationPricing.HALF_DAY_AFTERNOON) return venue.afternoonRate();
+        long minutes = Duration.between(start, end).toMinutes();
+        return venue.hourlyRate().multiply(BigDecimal.valueOf(minutes))
                 .divide(BigDecimal.valueOf(60), 2, RoundingMode.HALF_UP);
     }
     public static void validatePricing(LocalTime start, LocalTime end, ReservationPricing pricing) {

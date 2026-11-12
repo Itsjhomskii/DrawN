@@ -308,7 +308,7 @@ public final class CustomerRecoveryAndEarningsTest {
                     "crash@example.test","",ContactMethod.EMAIL,"pw",new BigDecimal("1000.00"));
             store.register(wallet,new BigDecimal("1000.00"));
             String javaPath=Path.of(System.getProperty("java.home"),"bin","java.exe").toString();
-            String classpath=Path.of("out").toAbsolutePath().toString();
+            String classpath=System.getProperty("java.class.path");
             Process child=new ProcessBuilder(javaPath,"-cp",classpath,CustomerRecoveryAndEarningsTest.class.getName(),
                     "wallet-ledger-crash",dir.toString(),wallet.getId()).redirectErrorStream(true).start();
             if(!child.waitFor(30,java.util.concurrent.TimeUnit.SECONDS)){child.destroyForcibly();throw new AssertionError("Wallet crash child timed out.");}

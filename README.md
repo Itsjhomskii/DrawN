@@ -1,4 +1,4 @@
-# DrawN — Event Management & Ticketing System
+﻿# DrawN — Event Management & Ticketing System
 
 **Tagline:** From drawing to doing.
 
@@ -13,8 +13,11 @@ Demo admin login: `admin` / `234`. Customer accounts are created through registr
 ## Requirements
 
 - Java 17 or later (the included Maven build is verified with JDK 21)
-- Maven 3.9+ for JavaFX dependencies
+- Maven Wrapper 3.3.4 downloads Maven 3.10.0 automatically on first use
 - No database or external service is used; persistence remains CSV-based
+- JavaFX 21.0.11 is downloaded by Maven and is compatible with JDK 21
+
+The project-local Maven Wrapper uses the installed Java JDK and downloads Maven into your user Maven cache; a global Maven installation is not required. The Windows wrapper can find Java on `PATH` when `JAVA_HOME` is unset.
 
 ## Compile and run
 
@@ -23,19 +26,22 @@ Run the console backup from `run.bat`, or start the JavaFX customer interface wi
 From PowerShell:
 
 ```powershell
-mvn compile exec:java -Dexec.mainClass=drawn.DrawN
-mvn javafx:run
+.\mvnw.cmd compile exec:java '-Dexec.mainClass=drawn.DrawN'
+.\mvnw.cmd javafx:run
+.\mvnw.cmd javafx:run '-Djavafx.mainClass=drawn.gui.JavaFxSmokeTestApplication'
 ```
+
+In VS Code, open this folder, choose **Terminal → New Terminal**, then run `.\mvnw.cmd javafx:run` or `run-gui.bat` in PowerShell. The standalone smoke window can be selected with the third command above. The GUI stylesheet is loaded from `src/drawn/gui/styles/theme.css` as a Maven resource.
 
 Compile and run the existing assertion checks from PowerShell:
 
 ```powershell
-mvn test-compile
-java -ea -cp target/classes;target/test-classes drawn.UserModelTest
-java -ea -cp target/classes;target/test-classes drawn.RegistrationWalletTest
-java -ea -cp target/classes;target/test-classes drawn.service.event.EventServiceTest
-java -ea -cp target/classes;target/test-classes drawn.service.event.Phase34WorkflowTest
-java -ea -cp target/classes;target/test-classes drawn.service.event.CustomerRecoveryAndEarningsTest
+.\mvnw.cmd test-compile
+java -ea -cp "target/classes;target/test-classes" drawn.UserModelTest
+java -ea -cp "target/classes;target/test-classes" drawn.RegistrationWalletTest
+java -ea -cp "target/classes;target/test-classes" drawn.service.event.EventServiceTest
+java -ea -cp "target/classes;target/test-classes" drawn.service.event.Phase34WorkflowTest
+java -ea -cp "target/classes;target/test-classes" drawn.service.event.CustomerRecoveryAndEarningsTest
 ```
 
-The organizer commission defaults to 10%. Set the Java system property `drawn.commission.percent` to a value from 0 to 100 to change it, for example `java -Ddrawn.commission.percent=12.5 -cp out drawn.DrawN`.
+These assertion-based checks use temporary data directories and do not write to the project's `data/` CSV files. The organizer commission defaults to 10%. Set the Java system property `drawn.commission.percent` to a value from 0 to 100 to change it, for example `java -Ddrawn.commission.percent=12.5 -cp target/classes drawn.DrawN`.
