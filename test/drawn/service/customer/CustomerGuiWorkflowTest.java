@@ -38,10 +38,10 @@ public final class CustomerGuiWorkflowTest {
                     List.of(new TicketCategory("General", new BigDecimal("100.00"), 10)));
             expectIllegal(() -> services.eventCreationService().create(owner.customer(), draft, paid.id(), ""));
 
-            services.reservationService().approve(paid.id());
+            services.reservations().approve(paid.id());
             Event event = services.eventCreationService().create(owner.customer(), draft, paid.id(), "");
             assert event.approvalStatus() == EventApprovalStatus.PUBLISHED;
-            assert services.eventService().eventsFor(owner.customer()).stream().anyMatch(e -> e.id().equals(event.id()));
+            assert services.events().eventsFor(owner.customer()).stream().anyMatch(e -> e.id().equals(event.id()));
             assert services.publishing().publishedEvents().stream().anyMatch(e -> e.id().equals(event.id()));
 
             var buyer = services.customerAccess().register("Taylor", "Buyer", LocalDate.now().minusYears(25),
