@@ -23,6 +23,8 @@ import drawn.service.payment.CommissionPolicy;
 import drawn.service.payment.OrganizerEarningsService;
 import drawn.service.event.EventService;
 import drawn.service.customer.CustomerAccessService;
+import drawn.service.customer.CustomerWorkflowService;
+import drawn.service.admin.AdminService;
 import drawn.storage.AccountStore;
 import drawn.storage.EventRepository;
 import drawn.storage.ReservationRepository;
@@ -46,11 +48,8 @@ import java.util.Scanner;
 
 /** Console entry point for the DrawN event management and ticketing app. */
 public final class DrawN {
-    private static final String ADMIN_USERNAME = "admin";
-    private static final String ADMIN_PASSWORD = "234";
-
     private final Scanner input = new Scanner(System.in);
-    private final List<LegacyEvent> events = new ArrayList<>();
+    private final AdminService adminService = new AdminService();
     private final AccountStore accounts = new AccountStore(Path.of("data"));
     private final CustomerAccessService customerAccess = new CustomerAccessService(accounts);
     private final EventRepository eventRepository = new EventRepository(Path.of("data"));
@@ -71,6 +70,9 @@ public final class DrawN {
             reservationRepository, ticketRepository, paymentRepository, accounts, transactionJournal);
     private final EventCancellationService cancellationService = new EventCancellationService(eventRepository,
             reservationRepository, ticketRepository, paymentRepository, accounts, transactionJournal);
+    private final CustomerWorkflowService workflow = new CustomerWorkflowService(accounts, eventRepository,
+            reservationRepository, ticketRepository, privateEventAccess, reservationService, paymentService,
+            eventService, publishingService);
 
     private DrawN() {
     }
@@ -112,7 +114,7 @@ public final class DrawN {
     private void login() {
         String contact = readRequiredText("Email address or phone number (admin for admin login): ");
         String password = readPassword("Password: ");
-        if (contact.equalsIgnoreCase(ADMIN_USERNAME) && password.equals(ADMIN_PASSWORD)) {
+        if (AdminService.isAdminLogin(contact, password)) {
             System.out.println("Welcome, admin!");
             adminMenu();
             return;
@@ -394,18 +396,16 @@ public final class DrawN {
 
     private void showMyEvents(Customer customer) {
         try {
-            List<Event> ownEvents = eventService.eventsFor(customer).stream()
-                    .filter(event -> event.approvalStatus() != drawn.model.event.EventApprovalStatus.CANCELLED).toList();
+            List<Event> ownEvents = workflow.activeEvents(customer);
             System.out.println("\nMy Event Plans");
-            List<VenueReservation> bookings = reservationService.forCustomer(customer);
-            List<VenueReservation> unlinkedReservations = bookings.stream().filter(reservation -> reservation.eventId().isBlank()).toList();
+            List<VenueReservation> unlinkedReservations = workflow.unlinkedReservations(customer);
             if (ownEvents.isEmpty()) System.out.println("No active events found.");
             else {
                 for (int i = 0; i < ownEvents.size(); i++) System.out.printf("%d. %s%n", i + 1, ownEvents.get(i).name());
                 int eventChoice = readInt("Choose an event (0 to go back): ", 0, ownEvents.size());
                 if (eventChoice == 0) return;
                 Event event = ownEvents.get(eventChoice - 1);
-                VenueReservation booking = bookings.stream().filter(reservation -> reservation.eventId().equals(event.id())).findFirst().orElse(null);
+                VenueReservation booking = workflow.reservationForEvent(customer, event.id()).orElse(null);
                 System.out.println();
                 printEventDetails(event);
                 System.out.println("  Event status: " + event.approvalStatus());
@@ -442,9 +442,7 @@ public final class DrawN {
             System.out.println("\nVenue reservations\n1. View reservations\n2. Request another venue");
             int reservationAction = readInt("Choose an option: ",1,2);
             if (reservationAction == 2) { requestVenueReservation(account, customer); return; }
-            List<VenueReservation> mine = reservationService.forCustomer(customer);
-            List<VenueReservation> activeReservations = mine.stream().filter(reservation -> reservation.status() != BookingStatus.CANCELLED
-                    && reservation.status() != BookingStatus.DECLINED && reservation.status() != BookingStatus.EXPIRED).toList();
+            List<VenueReservation> activeReservations = workflow.activeReservations(customer);
             System.out.println("\nActive venue requests");
             if (activeReservations.isEmpty()) { System.out.println("No active venue requests found."); return; }
             for (int i = 0; i < activeReservations.size(); i++) System.out.printf("%d. %s%n", i + 1, activeReservations.get(i).venueName());
@@ -455,7 +453,7 @@ public final class DrawN {
             System.out.println("Date: " + selected.date());
             System.out.println("Time: " + selected.startTime() + "-" + selected.endTime());
             System.out.println("Reservation cost: PHP " + selected.cost().setScale(2).toPlainString());
-            System.out.println("Pricing: " + reservationCostExplanation(selected));
+            System.out.println("Pricing: " + CustomerWorkflowService.reservationCostExplanation(selected));
             System.out.println("Reservation status: " + reservationStatusLabel(selected));
             System.out.println("Payment status: " + selected.paymentStatus());
             if (selected.status() == BookingStatus.PENDING && selected.paymentStatus() == PaymentStatus.PAID)
@@ -474,20 +472,6 @@ public final class DrawN {
         } catch (IOException ex) { System.out.println("Could not load reservations: " + ex.getMessage()); }
     }
 
-    private String reservationCostExplanation(VenueReservation reservation) {
-        Venue venue=VenueCatalog.all().stream().filter(v->v.name().equals(reservation.venueName())).findFirst().orElse(null);
-        if(venue==null) return reservation.pricing()+" rate; stored total PHP "+reservation.cost().setScale(2).toPlainString();
-        return switch(reservation.pricing()) {
-            case HALF_DAY_MORNING -> "fixed morning block PHP "+venue.morningRate().setScale(2).toPlainString()+" (not based on guest count or minutes)";
-            case HALF_DAY_AFTERNOON -> "fixed afternoon block PHP "+venue.afternoonRate().setScale(2).toPlainString()+" (not based on guest count or minutes)";
-            case HOURLY -> {
-                long minutes=java.time.Duration.between(reservation.startTime(),reservation.endTime()).toMinutes();
-                BigDecimal hours=BigDecimal.valueOf(minutes).divide(BigDecimal.valueOf(60),4,java.math.RoundingMode.HALF_UP);
-                yield venue.hourlyRate().toPlainString()+"/hour × "+hours.toPlainString()+" hours";
-            }
-        };
-    }
-
     private String reservationStatusLabel(VenueReservation reservation) {
         return reservation.status().name();
     }
@@ -501,43 +485,21 @@ public final class DrawN {
         ReservationPricing pricing=chooseEnum("Reservation pricing",ReservationPricing.values());
         try {
             ReservationService.validatePricing(start, end, pricing);
-            BigDecimal quote = reservationQuote(venue, start, end, pricing);
+            BigDecimal quote = CustomerWorkflowService.reservationQuote(venue, start, end, pricing);
             System.out.println("\nReservation payment review");
             System.out.printf("Venue: %s%nDate: %s%nTime: %s-%s%nAmount due: PHP %s%n", venue.name(), date,
                     start, end, quote.setScale(2).toPlainString());
-            if (account.getWalletBalance().compareTo(quote) < 0)
-                throw new IllegalArgumentException("Insufficient wallet balance.");
+            workflow.quoteVenueRequest(account, venue, start, end, pricing);
             if (!readYesNo("Confirm full reservation payment? (y/n): ")) {
                 System.out.println("Reservation request cancelled. No payment was taken.");
                 return;
             }
-            VenueReservation reservation=reservationService.request(customer,venue,date,start,end,pricing);
-            VenueReservation submitted;
-            try {
-                submitted = paymentService.payVenue(customer, account, reservation.id());
-            } catch (IOException | RuntimeException paymentFailure) {
-                // If no financial record was written, remove the just-created unpaid request.
-                // Otherwise leave it for the journal recovery path instead of losing the payment.
-                VenueReservation current = reservationRepository.findById(reservation.id());
-                if (current.paymentStatus() == PaymentStatus.UNPAID
-                        && !accounts.hasWalletTransaction(account.getId(), "PAYMENT:venue:" + reservation.id()))
-                    reservationRepository.delete(reservation.id());
-                throw paymentFailure;
-            }
+            VenueReservation submitted = workflow.requestAndPayVenue(customer, account, venue, date, start, end, pricing);
             System.out.printf("%nReservation payment successful!%n%nAmount Paid: PHP %s%nPayment Status: %s%nReservation Status: %s%n%n"
                             + "Your reservation has been submitted for administrator approval.%n"
                             + "You may create an event using this reservation once it has been approved.%n",
                     submitted.cost().setScale(2).toPlainString(), submitted.paymentStatus(), submitted.status());
         } catch(IOException|IllegalArgumentException ex) { System.out.println("Reservation request failed: "+ex.getMessage()); }
-    }
-
-    private BigDecimal reservationQuote(Venue venue, LocalTime start, LocalTime end, ReservationPricing pricing) {
-        return switch (pricing) {
-            case HALF_DAY_MORNING -> venue.morningRate();
-            case HALF_DAY_AFTERNOON -> venue.afternoonRate();
-            case HOURLY -> venue.hourlyRate().multiply(BigDecimal.valueOf(java.time.Duration.between(start, end).toMinutes()))
-                    .divide(BigDecimal.valueOf(60), 2, java.math.RoundingMode.HALF_UP);
-        };
     }
 
     private void browsePublishedEvents() {
@@ -566,14 +528,15 @@ public final class DrawN {
     private void listCustomerEvents() {
         System.out.println("\nAvailable events");
         boolean found = false;
+        List<AdminService.LegacyEvent> events = adminService.events();
         for (int i = 0; i < events.size(); i++) {
-            LegacyEvent event = events.get(i);
+            AdminService.LegacyEvent event = events.get(i);
             found = true;
             System.out.printf("Event %d%n", i + 1);
-            System.out.println("  Name: " + event.name);
-            System.out.println("  Date: " + event.date);
-            System.out.println("  Ticket price: PHP " + event.price.toPlainString());
-            System.out.println("  Tickets remaining: " + event.remaining);
+            System.out.println("  Name: " + event.name());
+            System.out.println("  Date: " + event.date());
+            System.out.println("  Ticket price: PHP " + event.price().toPlainString());
+            System.out.println("  Tickets remaining: " + event.remaining());
             System.out.println("----------------------------------------");
         }
         try {
@@ -613,12 +576,7 @@ public final class DrawN {
                 published = publishingService.publishedEvents();
             } else {
                 String keyword = readRequiredText("Private event access keyword: ");
-                published = eventRepository.findAll().stream().filter(event -> event.approvalStatus()
-                        == drawn.model.event.EventApprovalStatus.PUBLISHED && event.visibility() == EventVisibility.PRIVATE)
-                        .filter(event -> {
-                            try { return privateEventAccess.matches(event.id(), keyword); }
-                            catch (IOException ex) { throw new IllegalStateException(ex); }
-                        }).toList();
+                published = workflow.privateEvents(keyword);
             }
             if (published.isEmpty()) { System.out.println("No published events are available."); return; }
             for (int i = 0; i < published.size(); i++) System.out.printf("%d. %s%n", i + 1, published.get(i).name());
@@ -658,8 +616,7 @@ public final class DrawN {
                 TicketRepository.Purchase purchase = purchases.get(i);
                 try {
                     Event event=publishingService.event(purchase.eventId());
-                    String category=publishingService.ticketTypes(purchase.eventId()).stream().filter(t->t.id().equals(purchase.ticketTypeId()))
-                            .map(TicketType::name).findFirst().orElse("Ticket");
+                    String category=workflow.ticketCategoryName(purchase);
                     System.out.printf("%d. %s | %s | %d ticket(s) | PHP %s | %s%n", i + 1, event.name(), category,
                             purchase.quantity(), purchase.amount().setScale(2).toPlainString(), purchase.status());
                 } catch(RuntimeException ex) { System.out.println("Ticket purchase record could not be displayed."); }
@@ -669,8 +626,7 @@ public final class DrawN {
 
     private void cancelTicketPurchase(AccountStore.Account account, Customer customer) {
         try {
-            List<TicketRepository.Purchase> active = publishingService.purchases(customer).stream()
-                    .filter(purchase -> purchase.status() == drawn.model.ticket.TicketPurchaseStatus.ACTIVE).toList();
+            List<TicketRepository.Purchase> active = workflow.activePurchases(customer);
             if (active.isEmpty()) { System.out.println("No active ticket purchases are available to cancel."); return; }
             System.out.println("\nActive ticket purchases");
             for (int i = 0; i < active.size(); i++) {
@@ -719,10 +675,7 @@ public final class DrawN {
         }
 
         try {
-            List<VenueReservation> eligible = reservationService.forCustomer(customer).stream()
-                    .filter(r -> (r.status() == BookingStatus.APPROVED || r.status() == BookingStatus.CONFIRMED)
-                            && r.paymentStatus() == PaymentStatus.PAID
-                            && r.eventId().isBlank()).toList();
+            List<VenueReservation> eligible = workflow.reservationsReadyForEvent(customer);
             System.out.println("\nCreate & Publish Event from an Approved Venue Booking");
             if (eligible.isEmpty()) {
                 System.out.println("No approved, paid venue reservation is ready for event details yet.");
@@ -739,9 +692,7 @@ public final class DrawN {
             VenueReservation reservation=eligible.get(reservationChoice-1);
             EventType type=chooseEnum("Event category",EventType.values());
             EventPurpose purpose=chooseEventPurpose();
-            Venue venue=VenueCatalog.all().stream().filter(v->v.name().equals(reservation.venueName())).findFirst()
-                    .orElseThrow(()->new IllegalArgumentException("Reserved venue details are unavailable."));
-            if(!venue.supports(purpose)) throw new IllegalArgumentException("Selected reservation venue does not support this event purpose.");
+            Venue venue=CustomerWorkflowService.reservedVenue(reservation, purpose);
             String name=readRequiredText("Event name: ");
             String description=readDescription();
             int attendance=readInt("Expected attendance (venue capacity "+venue.capacity()+"): ",1,venue.capacity());
@@ -749,8 +700,7 @@ public final class DrawN {
             String privateKeyword = visibility == EventVisibility.PRIVATE
                     ? readRequiredText("Private event access keyword: ") : "";
             List<TicketCategory> categories = purpose == EventPurpose.TICKETED_EVENT ? readTicketCategories() : List.of();
-            int ticketQuantity = categories.stream().mapToInt(TicketCategory::quantity).sum();
-            if (ticketQuantity > venue.capacity()) throw new IllegalArgumentException("Total ticket quantity exceeds venue capacity.");
+            CustomerWorkflowService.requireTicketsFitVenue(categories, venue);
             EventDraft draft=new EventDraft(name,description,type,purpose,visibility,reservation.date(),reservation.startTime(),
                     reservation.endTime(),attendance,venue,categories);
             printDraft(draft);
@@ -758,30 +708,8 @@ public final class DrawN {
                 System.out.println("Event creation cancelled. Your venue reservation remains valid.");
                 return;
             }
-            Event saved = null;
-            try {
-                saved = eventService.createPublishedForApprovedReservation(customer, draft, reservation.id());
-                if (visibility == EventVisibility.PRIVATE) privateEventAccess.save(saved.id(), privateKeyword);
-                if (purpose == EventPurpose.TICKETED_EVENT) {
-                    String eventId = saved.id();
-                    LocalDateTime salesStart = LocalDateTime.now();
-                    LocalDateTime salesDeadline = reservation.date().atTime(reservation.startTime()).minusMinutes(1);
-                    List<TicketType> types = categories.stream().map(category -> new TicketType(java.util.UUID.randomUUID().toString(),
-                            eventId, category.name(), category.name() + " ticket", category.price(), category.quantity(), 0,
-                            salesStart, salesDeadline)).toList();
-                    publishingService.configureTickets(customer, saved.id(), types);
-                    publishingService.publish(customer, saved.id());
-                }
-                System.out.println("Event published.");
-            } catch (IOException | RuntimeException creationFailure) {
-                if (saved != null) {
-                    try {
-                        privateEventAccess.delete(saved.id());
-                        eventService.discardFailedCustomerCreation(customer, saved.id(), reservation.id());
-                    } catch (IOException | RuntimeException rollbackFailure) { creationFailure.addSuppressed(rollbackFailure); }
-                }
-                throw creationFailure;
-            }
+            workflow.createAndPublishEvent(customer, draft, reservation, privateKeyword);
+            System.out.println("Event published.");
         } catch (IOException | RuntimeException ex) {
             System.out.println("Event submission failed: " + ex.getMessage());
         }
@@ -813,7 +741,7 @@ public final class DrawN {
     }
 
     private String displayPurpose(EventPurpose purpose) {
-        return purpose == EventPurpose.SOCIAL_GATHERING ? "Social Gathering" : "Commercial / Ticketed Event";
+        return CustomerWorkflowService.displayPurpose(purpose);
     }
 
     private LocalDate readEventDate() {
@@ -844,7 +772,7 @@ public final class DrawN {
     }
 
     private Venue chooseVenue(EventPurpose purpose) {
-        List<Venue> compatible = VenueCatalog.all().stream().filter(venue -> venue.supports(purpose)).toList();
+        List<Venue> compatible = CustomerWorkflowService.compatibleVenues(purpose);
         System.out.println("\nAvailable compatible venues:");
         for (int i = 0; i < compatible.size(); i++) {
             Venue venue = compatible.get(i);
@@ -961,16 +889,17 @@ public final class DrawN {
                 return;
             }
             List<AccountStore.Transaction> funding = transactions.stream()
-                    .filter(transaction -> transaction.type().equals("TOP_UP") || transaction.type().equals("INITIAL_FUNDING"))
+                    .filter(CustomerWorkflowService::isFunding)
                     .toList();
             List<AccountStore.Transaction> eventTransactions = transactions.stream().filter(transaction -> !funding.contains(transaction)).toList();
             System.out.println("\nWallet funding");
             if (funding.isEmpty()) System.out.println("No top-ups or initial funding found.");
-            for (AccountStore.Transaction transaction : funding) printTransaction(transaction, transaction.type().equals("TOP_UP") ? "Wallet top-up" : "Initial wallet funding", "Funds added to your wallet.");
+            for (AccountStore.Transaction transaction : funding) printTransaction(transaction, CustomerWorkflowService.fundingLabel(transaction), "Funds added to your wallet.");
             System.out.println("\nEvent transactions");
             if (eventTransactions.isEmpty()) System.out.println("No event-related payments, refunds, or fees found.");
             for (AccountStore.Transaction transaction : eventTransactions)
-                printTransaction(transaction, transactionLabel(transaction.type()), transactionDetails(transaction));
+                printTransaction(transaction, CustomerWorkflowService.transactionLabel(transaction.type()),
+                        workflow.transactionDetails(transaction));
             showEventAndVenueRecords(customer);
         } catch (IOException ex) {
             System.out.println("Could not read wallet history: " + ex.getMessage());
@@ -996,51 +925,6 @@ public final class DrawN {
         System.out.printf("%s%n  %s%n  Amount: PHP %s | Balance: PHP %s | %s%n", label, details,
                 transaction.amount().setScale(2).toPlainString(), transaction.balanceAfter().setScale(2).toPlainString(),
                 transaction.timestamp());
-    }
-
-    private String transactionLabel(String type) {
-        if (type.startsWith("PAYMENT:ticket:")) return "Ticket purchase";
-        if (type.startsWith("REFUND:ticket-cancellation:")) return "Ticket cancellation refund";
-        if (type.startsWith("REFUND:ticket-refund:")) return "Event cancellation ticket refund";
-        if (type.startsWith("CREDIT:ticket-cancellation-fee:")) return "Ticket cancellation fee received";
-        if (type.startsWith("PAYMENT:venue:")) return "Venue booking payment";
-        if (type.startsWith("REFUND:venue:")) return "Venue booking refund";
-        return type;
-    }
-
-    private String transactionDetails(AccountStore.Transaction transaction) throws IOException {
-        String type = transaction.type();
-        String purchaseId = null;
-        String action = null;
-        if (type.startsWith("PAYMENT:ticket:")) { purchaseId = type.substring("PAYMENT:ticket:".length()); action = "Purchase"; }
-        else if (type.startsWith("REFUND:ticket-cancellation:")) { purchaseId = type.substring("REFUND:ticket-cancellation:".length()); action = "Customer cancellation"; }
-        else if (type.startsWith("REFUND:ticket-refund:")) { purchaseId = type.substring("REFUND:ticket-refund:".length()); action = "Event cancellation"; }
-        else if (type.startsWith("CREDIT:ticket-cancellation-fee:")) { purchaseId = type.substring("CREDIT:ticket-cancellation-fee:".length()); action = "Organizer share of cancellation fee"; }
-        if (purchaseId != null) {
-            String ticketPurchaseId = purchaseId;
-            TicketRepository.Purchase purchase = ticketRepository.allPurchaseRecords().stream()
-                    .filter(candidate -> candidate.id().equals(ticketPurchaseId)).findFirst().orElse(null);
-            if (purchase == null) return action + " for a ticket purchase.";
-            Event event = eventRepository.findAll().stream().filter(candidate -> candidate.id().equals(purchase.eventId()))
-                    .findFirst().orElse(null);
-            String category = ticketRepository.types(purchase.eventId()).stream()
-                    .filter(candidate -> candidate.id().equals(purchase.ticketTypeId())).map(TicketType::name)
-                    .findFirst().orElse("Ticket");
-            return action + " — " + (event == null ? "Event" : event.name()) + " | " + category + " | "
-                    + purchase.quantity() + " ticket(s).";
-        }
-        String reservationId = null;
-        if (type.startsWith("PAYMENT:venue:")) reservationId = type.substring("PAYMENT:venue:".length());
-        else if (type.startsWith("REFUND:venue:")) reservationId = type.substring("REFUND:venue:".length());
-        if (reservationId != null) {
-            String venueReservationId = reservationId;
-            VenueReservation reservation = reservationRepository.findAll().stream()
-                    .filter(candidate -> candidate.id().equals(venueReservationId)).findFirst().orElse(null);
-            if (reservation == null) return "Venue reservation transaction.";
-            return reservation.venueName() + " | " + reservation.date() + " | " + reservation.startTime()
-                    + "-" + reservation.endTime() + ".";
-        }
-        return "Event-related wallet transaction.";
     }
 
     private void adminMenu() {
@@ -1076,17 +960,18 @@ public final class DrawN {
         String date = readRequiredText("Date (for example, 2026-12-31): ");
         int capacity = readInt("Ticket capacity: ", 1, Integer.MAX_VALUE);
         BigDecimal price = readPrice("Ticket price (PHP): ");
-        events.add(new LegacyEvent(name, date, capacity, price));
+        adminService.addEvent(name, date, capacity, price);
         System.out.println("Event added.");
     }
 
     private void listEvents() {
         System.out.println("\nAvailable events");
+        List<AdminService.LegacyEvent> events = adminService.events();
         boolean found = !events.isEmpty();
         for (int i = 0; i < events.size(); i++) {
-            LegacyEvent event = events.get(i);
+            AdminService.LegacyEvent event = events.get(i);
             System.out.printf("%d. %s | %s | PHP %s | %d tickets left%n",
-                    i + 1, event.name, event.date, event.price.toPlainString(), event.remaining);
+                    i + 1, event.name(), event.date(), event.price().toPlainString(), event.remaining());
         }
         try {
             List<Event> approvedPublic = eventService.publicApprovedEvents();
@@ -1105,6 +990,7 @@ public final class DrawN {
     }
 
     private void reserveTickets() {
+        List<AdminService.LegacyEvent> events = adminService.events();
         if (events.isEmpty()) {
             System.out.println("There are no events to reserve yet.");
             return;
@@ -1112,12 +998,12 @@ public final class DrawN {
 
         System.out.println("\nAvailable in-memory events");
         for (int i = 0; i < events.size(); i++) {
-            LegacyEvent available = events.get(i);
+            AdminService.LegacyEvent available = events.get(i);
             System.out.printf("Event %d%n", i + 1);
-            System.out.println("  Name: " + available.name);
-            System.out.println("  Date: " + available.date);
-            System.out.println("  Ticket price: PHP " + available.price.toPlainString());
-            System.out.println("  Tickets remaining: " + available.remaining);
+            System.out.println("  Name: " + available.name());
+            System.out.println("  Date: " + available.date());
+            System.out.println("  Ticket price: PHP " + available.price().toPlainString());
+            System.out.println("  Tickets remaining: " + available.remaining());
             System.out.println("----------------------------------------");
         }
         int eventNumber = readInt("Choose an event number (0 to cancel): ", 0, events.size());
@@ -1125,16 +1011,16 @@ public final class DrawN {
             return;
         }
 
-        LegacyEvent event = events.get(eventNumber - 1);
-        if (event.remaining == 0) {
+        AdminService.LegacyEvent event = events.get(eventNumber - 1);
+        if (event.remaining() == 0) {
             System.out.println("That event is sold out.");
             return;
         }
 
         String customerName = readRequiredText("Your name: ");
-        int quantity = readInt("Number of tickets: ", 1, event.remaining);
-        event.remaining -= quantity;
-        BigDecimal total = event.price.multiply(BigDecimal.valueOf(quantity));
+        int quantity = readInt("Number of tickets: ", 1, event.remaining());
+        event.reserve(quantity);
+        BigDecimal total = event.price().multiply(BigDecimal.valueOf(quantity));
         System.out.printf("Reserved %d ticket(s) for %s. Total: PHP %s.%n",
                 quantity, customerName, total.toPlainString());
         System.out.println("Payment verification is not available in this starter version.");
@@ -1210,19 +1096,5 @@ public final class DrawN {
         java.io.Console console = System.console();
         System.out.flush();
         return console == null ? input.nextLine() : console.readLine();
-    }
-
-    private static final class LegacyEvent {
-        private final String name;
-        private final String date;
-        private final BigDecimal price;
-        private int remaining;
-
-        private LegacyEvent(String name, String date, int capacity, BigDecimal price) {
-            this.name = name;
-            this.date = date;
-            this.price = price;
-            this.remaining = capacity;
-        }
     }
 }

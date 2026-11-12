@@ -23,7 +23,7 @@ public final class DrawNApplication extends Application {
         stage.setMinWidth(960);
         stage.setMinHeight(640);
         try {
-            services = new AppServices(Path.of("data"));
+            services = new AppServices(Path.of(System.getProperty("drawn.data", "data")));
             services.recoverPending();
             showLogin();
             stage.setMaximized(true);
@@ -35,6 +35,7 @@ public final class DrawNApplication extends Application {
 
     public void showLogin() { setRootForView(new LoginView(this, services, session).view()); }
     public void showShell() { setRootForView(new MainShell(this, services, session).view()); }
+    public void showAdmin() { session.clear(); setRootForView(new drawn.gui.views.AdminView(this, services).view()); }
 
     public void setRootForView(javafx.scene.Parent root) {
         if (scene == null) {

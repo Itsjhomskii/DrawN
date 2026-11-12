@@ -39,7 +39,8 @@ public final class RegisterView {
         RadioButton phone = new RadioButton("Phone"); phone.setToggleGroup(contactMethod);
         phone.setOnAction(e -> contact.setPromptText("10-digit phone number"));
         email.setOnAction(e -> contact.setPromptText("Email address"));
-        Button create = new Button("Create Account"); create.setMaxWidth(Double.MAX_VALUE); create.getStyleClass().add("primary-button");
+        first.setId("reg-first"); last.setId("reg-last"); contact.setId("reg-contact"); password.setId("reg-password"); dob.setId("reg-dob"); funding.setId("reg-funding"); phone.setId("reg-phone");
+        Button create = new Button("Create Account"); create.setMaxWidth(Double.MAX_VALUE); create.getStyleClass().add("primary-button"); create.setId("reg-create");
         create.setOnAction(e -> submit(first,last,dob,email.isSelected() ? ContactMethod.EMAIL : ContactMethod.PHONE,contact,password,funding,error));
         Hyperlink back = new Hyperlink("Already have an account? Log In"); back.setOnAction(e -> app.showLogin());
         VBox card = new VBox(12, title("Create your DrawN account"), subtitle("Set up your customer account and initial wallet balance."),
@@ -50,8 +51,10 @@ public final class RegisterView {
     private void submit(TextField first, TextField last, DatePicker dob, ContactMethod method, TextField contact,
                         PasswordField password, TextField funding, Label error) {
         try {
-            BigDecimal amount = new BigDecimal(funding.getText().trim());
+            BigDecimal amount = Ui.amount(funding.getText(), "Initial wallet funding");
             CustomerAccessService.AuthenticatedCustomer created = services.customerAccess().register(first.getText(), last.getText(), dob.getValue(), method, contact.getText(), password.getText(), amount);
+            String emailNote = method == ContactMethod.EMAIL ? "A simulated confirmation email has been sent to " + created.account().getEmail() + ".\n\n" : "";
+            Ui.info("WALLET SETUP COMPLETE!", emailNote + "Initial Wallet Balance: " + Ui.php(amount) + "\n\nYour account is now ready!");
             session.start(created.account(), created.customer()); app.showShell();
         } catch (Exception ex) { error.setText(LoginView.userMessage(ex)); }
     }
