@@ -1,0 +1,1 @@
+receiptId,reservationId,customerId,venueName,eventPurpose,date,startTime,endTime,pricing,durationHours,rate,venueFee,serviceFee,total,status,createdAt

@@ -3,7 +3,6 @@ package drawn.gui.views;
 import drawn.gui.AppServices;
 import drawn.gui.AppSession;
 import drawn.gui.DrawNApplication;
-import drawn.service.admin.AdminService;
 import drawn.service.customer.CustomerAccessService;
 import javafx.geometry.Pos;
 import javafx.scene.Parent;
@@ -38,7 +37,7 @@ public final class LoginView {
 
         Label brand = new Label("DrawN"); brand.getStyleClass().add("brand-title");
         Label tagline = new Label("From drawing to doing."); tagline.getStyleClass().add("secondary-text");
-        Label adminHint = new Label("Admin? Sign in with the admin username."); adminHint.getStyleClass().add("secondary-text");
+        Label adminHint = new Label("Admin? Sign in with the admin email."); adminHint.getStyleClass().add("secondary-text");
         VBox card = new VBox(14, brand, tagline, new Label("Sign in to your account"), contact, password, error, login, register, adminHint);
         card.setAlignment(Pos.CENTER_LEFT); card.getStyleClass().add("login-card"); card.setMaxWidth(390);
         StackPane root = new StackPane(card); root.setAlignment(Pos.CENTER); root.getStyleClass().add("app-root");
@@ -46,7 +45,7 @@ public final class LoginView {
     }
 
     private void submit(TextField contact, PasswordField password, Label error) {
-        if (AdminService.isAdminLogin(contact.getText(), password.getText())) { app.showAdmin(); return; }
+        if (app.signInAdmin(contact.getText(), password.getText())) return;
         try {
             CustomerAccessService.AuthenticatedCustomer authenticated = services.customerAccess().authenticate(contact.getText(), password.getText());
             session.start(authenticated.account(), authenticated.customer());

@@ -1,11 +1,17 @@
 @echo off
-setlocal EnableExtensions EnableDelayedExpansion
+setlocal EnableExtensions
 cd /d "%~dp0"
 
-mvn -q compile exec:java -Dexec.mainClass=drawn.DrawN
+if not exist "%~dp0mvnw.cmd" (
+    echo Maven Wrapper was not found in the DrawN project folder.
+    pause
+    exit /b 1
+)
+
+call "%~dp0mvnw.cmd" -q compile exec:java -Dexec.mainClass=drawn.DrawN
 if errorlevel 1 (
     echo.
-    echo Java compilation failed.
+    echo DrawN console launch failed.
     pause
     exit /b 1
 )
