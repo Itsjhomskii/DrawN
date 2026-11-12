@@ -1,6 +1,5 @@
 package drawn.gui;
 
-import drawn.service.admin.AdminService;
 import drawn.service.customer.CustomerAccessService;
 import drawn.service.customer.CustomerWorkflowService;
 import drawn.service.event.EventCancellationService;
@@ -33,7 +32,8 @@ public final class AppServices {
     private final EventCancellationService cancellation;
     private final OrganizerEarningsService earnings;
     private final CustomerWorkflowService workflow;
-    private final AdminService admin = new AdminService();
+    private final drawn.service.customer.CustomerVenueWorkflowService venueWorkflow;
+    private final drawn.service.customer.CustomerEventCreationService eventCreation;
 
     public AppServices(Path dataDirectory) {
         accounts = new AccountStore(dataDirectory);
@@ -52,6 +52,8 @@ public final class AppServices {
         cancellation = new EventCancellationService(eventRepository, reservationRepository, ticketRepository, paymentRepository, accounts, journal);
         workflow = new CustomerWorkflowService(accounts, eventRepository, reservationRepository, ticketRepository,
                 privateAccess, reservations, payment, events, publishing);
+        venueWorkflow = new drawn.service.customer.CustomerVenueWorkflowService(accounts, reservationRepository, reservations, payment);
+        eventCreation = new drawn.service.customer.CustomerEventCreationService(events, publishing, privateAccess);
     }
 
     public void recoverPending() throws IOException {
@@ -69,5 +71,6 @@ public final class AppServices {
     public EventCancellationService cancellation() { return cancellation; }
     public OrganizerEarningsService earnings() { return earnings; }
     public CustomerWorkflowService workflow() { return workflow; }
-    public AdminService admin() { return admin; }
+    public drawn.service.customer.CustomerVenueWorkflowService venueWorkflow() { return venueWorkflow; }
+    public drawn.service.customer.CustomerEventCreationService eventCreationService() { return eventCreation; }
 }

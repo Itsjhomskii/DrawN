@@ -9,7 +9,8 @@
     <properties>
         <maven.compiler.release>17</maven.compiler.release>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-        <javafx.version>21.0.2</javafx.version>
+        <javafx.version>21.0.11</javafx.version>
+        <javafx.mainClass>drawn.gui.DrawNApplication</javafx.mainClass>
     </properties>
 
     <dependencies>
@@ -27,7 +28,12 @@
         <resources>
             <resource>
                 <directory>src</directory>
-                <includes><include>**/*.css</include></includes>
+                <includes>
+                    <include>**/*.css</include>
+                    <include>**/*.png</include>
+                    <include>**/*.jpg</include>
+                    <include>**/*.jpeg</include>
+                </includes>
             </resource>
         </resources>
         <plugins>
@@ -41,7 +47,7 @@
                 <groupId>org.openjfx</groupId>
                 <artifactId>javafx-maven-plugin</artifactId>
                 <version>0.0.8</version>
-                <configuration><mainClass>drawn.gui.DrawNApplication</mainClass></configuration>
+                <configuration><mainClass>${javafx.mainClass}</mainClass></configuration>
             </plugin>
             <plugin>
                 <groupId>org.codehaus.mojo</groupId>

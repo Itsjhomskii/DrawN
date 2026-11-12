@@ -1,18 +1,24 @@
 package drawn.gui;
 
+import drawn.gui.admin.AdminView;
 import drawn.gui.views.LoginView;
 import drawn.gui.views.MainShell;
+import drawn.model.event.Event;
+import drawn.service.admin.AdminService;
 import javafx.application.Application;
+import javafx.scene.Parent;
 import javafx.scene.Scene;
 import javafx.scene.control.Alert;
 import javafx.stage.Stage;
 
 import java.io.IOException;
 import java.nio.file.Path;
+import java.util.List;
 
 /** JavaFX customer entry point. The console application remains drawn.DrawN. */
 public final class DrawNApplication extends Application {
     private final AppSession session = new AppSession();
+    private final AdminService adminService = new AdminService();
     private AppServices services;
     private Stage stage;
     private Scene scene;
@@ -35,9 +41,22 @@ public final class DrawNApplication extends Application {
 
     public void showLogin() { setRootForView(new LoginView(this, services, session).view()); }
     public void showShell() { setRootForView(new MainShell(this, services, session).view()); }
-    public void showAdmin() { session.clear(); setRootForView(new drawn.gui.views.AdminView(this, services).view()); }
 
-    public void setRootForView(javafx.scene.Parent root) {
+    /** Opens the admin dashboard when the credentials are the admin's; false means "not the admin". */
+    public boolean signInAdmin(String email, String password) {
+        if (!AdminService.isAdminLogin(email, password)) return false;
+        session.clear();
+        setRootForView(new AdminView(new AdminView.Host() {
+            @Override public List<Event> approvedPublicEvents() throws IOException { return services.events().publicApprovedEvents(); }
+            @Override public void setRoot(Parent root) { setRootForView(root); }
+            @Override public void logout() { showLogin(); }
+        }, adminService).view());
+        String adminCss = getClass().getResource("/drawn/gui/admin/admin.css").toExternalForm();
+        if (!scene.getStylesheets().contains(adminCss)) scene.getStylesheets().add(adminCss);
+        return true;
+    }
+
+    public void setRootForView(Parent root) {
         if (scene == null) {
             scene = new Scene(root, 1100, 700);
             scene.getStylesheets().add(getClass().getResource("/drawn/gui/styles/theme.css").toExternalForm());
