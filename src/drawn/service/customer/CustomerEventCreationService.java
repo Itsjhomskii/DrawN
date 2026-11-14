@@ -16,7 +16,7 @@ import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
 
-/** Completes confirmed customer event creation without creating drafts. */
+/** Creates an event setup after its venue reservation has been approved. */
 public final class CustomerEventCreationService {
     private final EventService events;
     private final EventPublishingService publishing;
@@ -32,7 +32,7 @@ public final class CustomerEventCreationService {
     public Event create(Customer customer, EventDraft draft, String reservationId, String privateKeyword) throws IOException {
         Event saved = null;
         try {
-            saved = events.createPublishedForApprovedReservation(customer, draft, reservationId);
+            saved = events.createConfiguredForApprovedReservation(customer, draft, reservationId);
             if (draft.visibility() == EventVisibility.PRIVATE) privateAccess.save(saved.id(), privateKeyword);
             if (draft.purpose() == EventPurpose.TICKETED_EVENT) {
                 String eventId = saved.id();
@@ -42,7 +42,6 @@ public final class CustomerEventCreationService {
                         UUID.randomUUID().toString(), eventId, category.name(), category.name() + " ticket",
                         category.price(), category.quantity(), 0, salesStart, salesDeadline)).toList();
                 publishing.configureTickets(customer, saved.id(), types);
-                publishing.publish(customer, saved.id());
             }
             return saved;
         } catch (IOException | RuntimeException failure) {

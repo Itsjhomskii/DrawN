@@ -74,7 +74,15 @@ public final class EventPublishingService {
         }
         if(total>event.venue().capacity())throw new IllegalArgumentException("Total ticket quantity exceeds venue capacity.");
         List<TicketType> prior=tickets.types(eventId);
-        if(prior.stream().anyMatch(t->t.sold()>0))throw new IllegalArgumentException("Ticket categories cannot change after sales begin.");
+        for (TicketType old : prior) {
+            if (old.sold() == 0) continue;
+            TicketType replacement = types.stream().filter(type -> type.id().equals(old.id())).findFirst()
+                    .orElseThrow(() -> new IllegalArgumentException("A ticket category with sales cannot be removed."));
+            if (replacement.quantity() < old.sold())
+                throw new IllegalArgumentException("Ticket quantity cannot be lower than tickets already sold.");
+            if (replacement.sold() != old.sold())
+                throw new IllegalArgumentException("Sold ticket counts cannot be changed.");
+        }
         tickets.saveTypes(eventId,types);
     }
 

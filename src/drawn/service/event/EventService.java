@@ -86,11 +86,8 @@ public final class EventService {
         return event;
     }
 
-    /**
-     * Customer-facing event creation.  Unlike the legacy draft APIs retained for old records,
-     * this writes an event only after the caller has collected and confirmed every detail.
-     */
-    public Event createPublishedForApprovedReservation(Customer organizer, EventDraft draft, String reservationId)
+    /** Saves configured event details separately from the later publication action. */
+    public Event createConfiguredForApprovedReservation(Customer organizer, EventDraft draft, String reservationId)
             throws IOException {
         validateDraft(organizer, draft);
         if (draft.purpose() == EventPurpose.TICKETED_EVENT && draft.ticketCategories().isEmpty())
@@ -102,7 +99,7 @@ public final class EventService {
         validateReservationForNewEvent(organizer, draft, reservation);
         Event event = new Event(UUID.randomUUID().toString(), organizer.getId(), draft.name(), draft.description(),
                 draft.type(), draft.purpose(), draft.visibility(), draft.date(), draft.startTime(), draft.endTime(),
-                draft.expectedAttendance(), draft.venue(), EventApprovalStatus.PUBLISHED, LocalDateTime.now(clock),
+                draft.expectedAttendance(), draft.venue(), EventApprovalStatus.APPROVED, LocalDateTime.now(clock),
                 draft.ticketCategories());
         boolean saved = false;
         try {
@@ -152,6 +149,24 @@ public final class EventService {
                 draft.type(), draft.purpose(), draft.visibility(), draft.date(), draft.startTime(), draft.endTime(),
                 draft.expectedAttendance(), draft.venue(), existing.approvalStatus(), existing.submittedAt(),
                 draft.ticketCategories());
+        repository.save(updated);
+        return updated;
+    }
+
+    /** Updates event details while preserving the approved reservation's venue and schedule. */
+    public Event editConfiguredEvent(Customer organizer, String eventId, EventDraft draft) throws IOException {
+        Event existing = owned(organizer, eventId);
+        if (existing.approvalStatus() != EventApprovalStatus.APPROVED
+                && existing.approvalStatus() != EventApprovalStatus.PUBLISHED)
+            throw new IllegalArgumentException("Only approved or published events can be edited.");
+        EventDraft fixedSchedule = new EventDraft(draft.name(), draft.description(), draft.type(), draft.purpose(),
+                draft.visibility(), existing.date(), existing.startTime(), existing.endTime(), draft.expectedAttendance(),
+                existing.venue(), draft.ticketCategories());
+        List<TicketCategory> categories = validateDraft(organizer, fixedSchedule);
+        Event updated = new Event(existing.id(), existing.organizerId(), fixedSchedule.name().trim(),
+                fixedSchedule.description().trim(), fixedSchedule.type(), fixedSchedule.purpose(),
+                fixedSchedule.visibility(), existing.date(), existing.startTime(), existing.endTime(),
+                fixedSchedule.expectedAttendance(), existing.venue(), existing.approvalStatus(), existing.submittedAt(), categories);
         repository.save(updated);
         return updated;
     }

@@ -19,6 +19,7 @@ import javafx.util.StringConverter;
 import java.io.IOException;
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.util.ArrayList;
 import java.util.List;
@@ -175,19 +176,46 @@ final class CustomerMenuPages {
         List<VenueReservation> reservations = services.reservationService().forCustomer(session.customer());
         VBox content = new VBox(14, title("My Events"), body("Events created from your approved venue reservations."));
         Button create = primary("Create Event", () -> createEvent()); content.getChildren().add(create);
-        if (events.isEmpty()) content.getChildren().add(emptyState("You have not created an event yet."));
-        for (Event event : events) {
-            VBox card = dataCard();
-            VenueReservation booking = reservations.stream().filter(r -> r.eventId().equals(event.id())).findFirst().orElse(null);
-            String schedule = booking == null ? event.date() + " • " + CustomerText.time(event.startTime()) + "–" + CustomerText.time(event.endTime())
-                    : CustomerText.reservationSchedule(booking);
-            card.getChildren().addAll(title(event.name()), body(CustomerText.words(event.type()) + " • " + schedule),
-                    body("Venue: " + event.venue().name() + " • Status: " + CustomerText.words(event.approvalStatus())), body(event.description()));
-            HBox actions = new HBox(8);
-            Button details = secondary("View Details", () -> new EventDetailsView(event, services, session, () -> navigate.accept("My Events"), booking).show());
-            Button cancel = secondary("Cancel Event", () -> cancelEvent(event));
-            actions.getChildren().addAll(details, cancel); card.getChildren().add(actions); content.getChildren().add(card);
-        }
+        TextField search = new TextField(); search.setPromptText("Search events by name, venue, or type");
+        ComboBox<String> typeFilter = new ComboBox<>(); typeFilter.getItems().add("All types");
+        events.stream().map(e -> CustomerText.words(e.type())).distinct().sorted().forEach(typeFilter.getItems()::add); typeFilter.getSelectionModel().selectFirst();
+        ComboBox<String> statusFilter = new ComboBox<>(); statusFilter.getItems().setAll("All statuses", "Unpublished", "Published"); statusFilter.getSelectionModel().selectFirst();
+        HBox filters = new HBox(10, search, typeFilter, statusFilter); filters.setAlignment(Pos.CENTER_LEFT); HBox.setHgrow(search, Priority.ALWAYS);
+        content.getChildren().add(filters);
+        GridPane cards = twoColumnGrid();
+        Runnable refresh = () -> {
+            String query = search.getText() == null ? "" : search.getText().trim().toLowerCase(java.util.Locale.ROOT);
+            String selectedType = typeFilter.getValue(), selectedStatus = statusFilter.getValue();
+            List<Event> matches = events.stream().filter(e -> (query.isBlank() || e.name().toLowerCase(java.util.Locale.ROOT).contains(query)
+                            || e.venue().name().toLowerCase(java.util.Locale.ROOT).contains(query) || CustomerText.words(e.type()).toLowerCase(java.util.Locale.ROOT).contains(query)))
+                    .filter(e -> selectedType == null || selectedType.equals("All types") || CustomerText.words(e.type()).equals(selectedType))
+                    .filter(e -> selectedStatus == null || selectedStatus.equals("All statuses")
+                            || (selectedStatus.equals("Published") == (e.approvalStatus() == EventApprovalStatus.PUBLISHED))).toList();
+            cards.getChildren().clear();
+            if (matches.isEmpty()) {
+                Node empty = emptyState(events.isEmpty() ? "You have not created an event yet." : "No events match those filters.");
+                cards.add(empty, 0, 0, 2, 1);
+            }
+            for (int i = 0; i < matches.size(); i++) {
+                Event event = matches.get(i);
+                VBox card = dataCard();
+                VenueReservation booking = reservations.stream().filter(r -> r.eventId().equals(event.id())).findFirst().orElse(null);
+                String schedule = booking == null ? event.date() + " • " + CustomerText.time(event.startTime()) + "–" + CustomerText.time(event.endTime())
+                        : CustomerText.reservationSchedule(booking);
+                card.getChildren().addAll(title(event.name()), body(CustomerText.words(event.type()) + " • " + schedule),
+                        body("Venue: " + event.venue().name()), body("Status: " + CustomerText.words(event.approvalStatus())), body(event.description()));
+                HBox actions = new HBox(8);
+                actions.getChildren().add(secondary("View Details", () -> new EventDetailsView(event, services, session, () -> navigate.accept("My Events"), booking).show()));
+                if (event.approvalStatus() == EventApprovalStatus.APPROVED || event.approvalStatus() == EventApprovalStatus.PUBLISHED)
+                    actions.getChildren().add(secondary("Edit / Configure", () -> editEvent(event)));
+                if (event.approvalStatus() == EventApprovalStatus.APPROVED) actions.getChildren().add(secondary("Publish", () -> publishEvent(event)));
+                actions.getChildren().add(secondary("Cancel Event", () -> cancelEvent(event)));
+                actions.setAlignment(Pos.CENTER_LEFT); card.getChildren().add(actions);
+                cards.add(card, i % 2, i / 2); GridPane.setHgrow(card, Priority.ALWAYS);
+            }
+        };
+        search.textProperty().addListener((o,a,b) -> refresh.run()); typeFilter.valueProperty().addListener((o,a,b) -> refresh.run());
+        statusFilter.valueProperty().addListener((o,a,b) -> refresh.run()); refresh.run(); content.getChildren().add(cards);
         return pageFrame("My Events", content);
     }
 
@@ -196,27 +224,18 @@ final class CustomerMenuPages {
         VBox content = new VBox(14, title("Venue Reservations"), body("Request and pay for a venue. Administrator approval remains a separate step."));
         content.getChildren().add(primary("Request a Venue", () -> navigate.accept("Explore Venues")));
         if (records.isEmpty()) content.getChildren().add(emptyState("You do not have venue reservations yet."));
-        GridPane cards = twoColumnGrid();
-        int index = 0;
         for (VenueReservation r : records) {
             VBox card = dataCard();
-            card.getChildren().addAll(title(r.venueName()), body(CustomerText.reservationSchedule(r)),
-                    body("Total: PHP " + money(r.cost())),
+            card.getChildren().addAll(title(r.venueName()), body(CustomerText.reservationSchedule(r)), body("Total: PHP " + money(r.cost())),
                     body("Reservation: " + CustomerText.words(r.status()) + " • Payment: " + CustomerText.words(r.paymentStatus())));
             if (!r.eventId().isBlank()) card.getChildren().add(body("Linked event: " + r.eventId()));
             if (!r.declineReason().isBlank()) card.getChildren().add(body("Reason: " + r.declineReason()));
-            HBox actions = new HBox(8);
-            actions.getChildren().add(secondary("View Details", () -> showReservationDetails(r)));
+            HBox actions = new HBox(8, secondary("View Details", () -> showReservationDetails(r)));
             if (isEditable(r)) actions.getChildren().add(secondary("Edit", () -> editReservation(r)));
             if (r.status() != BookingStatus.CANCELLED && r.status() != BookingStatus.DECLINED && r.status() != BookingStatus.EXPIRED)
                 actions.getChildren().add(secondary("Cancel", () -> cancelReservation(r)));
-            actions.setAlignment(Pos.CENTER_LEFT);
-            card.getChildren().add(actions);
-            cards.add(card, index % 2, index / 2);
-            GridPane.setHgrow(card, Priority.ALWAYS);
-            index++;
+            card.getChildren().add(actions); content.getChildren().add(card);
         }
-        if (!records.isEmpty()) content.getChildren().add(cards);
         return pageFrame("Venue Reservations", content);
     }
 
@@ -602,10 +621,10 @@ final class CustomerMenuPages {
                 List<TicketCategory> categories=p==EventPurpose.TICKETED_EVENT?readTicketRows(ticketRows):List.of();
                 if(categories.stream().mapToInt(TicketCategory::quantity).sum()>v.capacity())throw new IllegalArgumentException("Ticket quantity exceeds venue capacity.");
                 EventDraft draft=new EventDraft(eventName,desc,type.getValue(),p,visibility.getValue(),r.date(),r.startTime(),r.endTime(),attendance.getValue(),v,categories);
-                if(!confirm("Create and publish “"+eventName+"” using this approved reservation?"))return;
+                if(!confirm("Create and configure “"+eventName+"” using this approved reservation? It will remain unpublished until you choose Publish."))return;
                 dialog.getDialogPane().lookupButton(submit).setDisable(true);
                 services.eventCreationService().create(session.customer(),draft,r.id(),access);
-                dialog.setResult(submit);dialog.close();info("Event created and published.");navigate.accept("My Events");
+                dialog.setResult(submit);dialog.close();info("Event created and configured. It has not been published.");navigate.accept("My Events");
             }catch(Exception ex){error.setText(message(ex));}
         });
         dialog.showAndWait();
@@ -622,6 +641,106 @@ final class CustomerMenuPages {
         for(Node node:rows.getChildren())if(node instanceof HBox row&&Boolean.TRUE.equals(row.getProperties().get("ticket-row"))){
             String n=((TextField)row.getChildren().get(0)).getText().trim();BigDecimal p=new BigDecimal(((TextField)row.getChildren().get(1)).getText().trim());int q=Integer.parseInt(((TextField)row.getChildren().get(2)).getText().trim());result.add(new TicketCategory(n,p,q));}
         if(result.isEmpty())throw new IllegalArgumentException("Add at least one ticket category for a ticketed event.");return result;
+    }
+
+    private void publishEvent(Event event) {
+        if (!confirm("Publish “" + event.name() + "”? It will become visible according to its visibility setting.")) return;
+        try {
+            if (event.purpose() == EventPurpose.TICKETED_EVENT) services.publishing().publish(session.customer(), event.id());
+            else services.eventService().publish(session.customer(), event.id());
+            info("Event published."); navigate.accept("My Events");
+        } catch (Exception ex) { error("Could not publish event: " + message(ex)); }
+    }
+
+    private void editEvent(Event event) {
+        try {
+            List<TicketType> existingTickets = event.purpose() == EventPurpose.TICKETED_EVENT
+                    ? services.publishing().ticketTypes(event.id()) : List.of();
+            Dialog<ButtonType> dialog = new Dialog<>(); dialog.setTitle("Edit and configure event");
+            ButtonType save = new ButtonType("Save Changes", ButtonBar.ButtonData.OK_DONE);
+            dialog.getDialogPane().getButtonTypes().addAll(save, ButtonType.CANCEL);
+            TextField name = new TextField(event.name()); TextArea description = new TextArea(event.description()); description.setWrapText(true); description.setPrefRowCount(3);
+            ComboBox<EventType> type = new ComboBox<>(); type.getItems().setAll(EventType.values()); type.setConverter(converter(CustomerText::words)); type.setValue(event.type());
+            ComboBox<EventPurpose> purpose = new ComboBox<>(); purpose.getItems().setAll(EventPurpose.values()); purpose.setConverter(converter(CustomerText::words)); purpose.setValue(event.purpose());
+            ComboBox<EventVisibility> visibility = new ComboBox<>(); visibility.getItems().setAll(EventVisibility.values()); visibility.setConverter(converter(CustomerText::words)); visibility.setValue(event.visibility());
+            Spinner<Integer> attendance = new Spinner<>(1, Math.max(1, event.venue().capacity()), event.expectedAttendance()); attendance.setEditable(true);
+            TextField keyword = new TextField(); keyword.setPromptText("Set or replace private access keyword");
+            VBox categories = new VBox(8);
+            if (event.purpose() == EventPurpose.TICKETED_EVENT) {
+                for (TicketType ticket : existingTickets) addTicketEditRow(categories, ticket, event);
+                if (existingTickets.isEmpty()) addTicketEditRow(categories, null, event);
+            }
+            Button add = secondary("Add Ticket Category", () -> addTicketEditRow(categories, null, event));
+            Runnable update = () -> { boolean ticketed = purpose.getValue() == EventPurpose.TICKETED_EVENT;
+                categories.setVisible(ticketed); categories.setManaged(ticketed); add.setVisible(ticketed); add.setManaged(ticketed); };
+            purpose.valueProperty().addListener((o,a,b) -> update.run()); update.run();
+            visibility.valueProperty().addListener((o,a,b) -> { boolean visible = b == EventVisibility.PRIVATE; keyword.setVisible(visible); keyword.setManaged(visible); });
+            keyword.setVisible(event.visibility() == EventVisibility.PRIVATE); keyword.setManaged(event.visibility() == EventVisibility.PRIVATE);
+            VBox fixed = new VBox(4, body("Approved venue: " + event.venue().name()), body("Approved date and time: " + event.date() + " • " + CustomerText.time(event.startTime()) + "–" + CustomerText.time(event.endTime())));
+            Label error = AuthenticationFormSupport.errorLabel();
+            VBox form = new VBox(10, fixed, row("Event name", name), row("Description", description), row("Event type", type), row("Purpose", purpose), row("Visibility", visibility), keyword, row("Expected attendance", attendance), categories, add, error);
+            ScrollPane scroll = new ScrollPane(form); scroll.setFitToWidth(true); scroll.setPrefViewportHeight(580); dialog.getDialogPane().setContent(scroll); styleDialog(dialog);
+            dialog.getDialogPane().lookupButton(save).addEventFilter(ActionEvent.ACTION, action -> {
+                action.consume();
+                try {
+                    EventPurpose selectedPurpose = purpose.getValue();
+                    List<TicketType> editedTypes = selectedPurpose == EventPurpose.TICKETED_EVENT ? readTicketTypes(categories, event) : List.of();
+                    List<TicketCategory> ticketCategories = editedTypes.stream()
+                            .map(ticket -> new TicketCategory(ticket.name(), ticket.price(), ticket.quantity())).toList();
+                    if (existingTickets.stream().anyMatch(ticket -> ticket.sold() > 0)
+                            && selectedPurpose != EventPurpose.TICKETED_EVENT)
+                        throw new IllegalArgumentException("An event with sold tickets must remain ticketed.");
+                    for (TicketType soldType : existingTickets.stream().filter(ticket -> ticket.sold() > 0).toList()) {
+                        if (editedTypes.stream().noneMatch(ticket -> ticket.id().equals(soldType.id())))
+                            throw new IllegalArgumentException("A ticket category with sales cannot be removed.");
+                    }
+                    if (ticketCategories.stream().mapToInt(TicketCategory::quantity).sum() > event.venue().capacity()) throw new IllegalArgumentException("Ticket quantity exceeds venue capacity.");
+                    if (visibility.getValue() == EventVisibility.PRIVATE && keyword.getText().isBlank()
+                            && event.visibility() != EventVisibility.PRIVATE) throw new IllegalArgumentException("Set a private event access keyword.");
+                    EventDraft draft = new EventDraft(name.getText(), description.getText(), type.getValue(), selectedPurpose, visibility.getValue(),
+                            event.date(), event.startTime(), event.endTime(), attendance.getValue(), event.venue(), ticketCategories);
+                    Event updated = services.eventService().editConfiguredEvent(session.customer(), event.id(), draft);
+                    if (selectedPurpose == EventPurpose.TICKETED_EVENT) {
+                        services.publishing().configureTickets(session.customer(), event.id(), editedTypes);
+                    }
+                    if (visibility.getValue() == EventVisibility.PRIVATE) {
+                        if (!keyword.getText().isBlank()) services.privateEventAccess().save(event.id(), keyword.getText());
+                    } else services.privateEventAccess().delete(event.id());
+                    dialog.close(); info(updated.approvalStatus() == EventApprovalStatus.PUBLISHED ? "Event updated. Changes are live." : "Event configuration saved. The event remains unpublished."); navigate.accept("My Events");
+                } catch (Exception ex) { error.setText(message(ex)); }
+            });
+            dialog.showAndWait();
+        } catch (Exception ex) { error("Could not open event configuration: " + message(ex)); }
+    }
+
+    private void addTicketEditRow(VBox rows, TicketType ticket, Event event) {
+        TextField n = new TextField(ticket == null ? "" : ticket.name()); n.setPromptText("Category name");
+        TextField price = new TextField(ticket == null ? "" : ticket.price().toPlainString()); price.setPromptText("Price PHP");
+        TextField qty = new TextField(ticket == null ? "" : Integer.toString(ticket.quantity())); qty.setPromptText("Quantity");
+        LocalDateTime start = ticket == null || ticket.salesStart() == null ? LocalDateTime.now() : ticket.salesStart();
+        LocalDateTime end = ticket == null || ticket.salesDeadline() == null ? event.date().atTime(event.startTime()).minusMinutes(1) : ticket.salesDeadline();
+        TextField salesStart = new TextField(start.toString()); salesStart.setPromptText("Sales start: yyyy-MM-ddTHH:mm");
+        TextField salesEnd = new TextField(end.toString()); salesEnd.setPromptText("Sales end: yyyy-MM-ddTHH:mm");
+        HBox row = new HBox(8, n, price, qty, salesStart, salesEnd);
+        row.getProperties().put("ticket-edit", ticket == null ? "" : ticket.id()); row.getProperties().put("ticket-sold", ticket == null ? 0 : ticket.sold());
+        Button remove = secondary("Remove", () -> rows.getChildren().remove(row)); row.getChildren().add(remove);
+        for (Node node : List.of(n, price, qty, salesStart, salesEnd)) HBox.setHgrow(node, Priority.ALWAYS);
+        rows.getChildren().add(row);
+    }
+
+    private List<TicketType> readTicketTypes(VBox rows, Event event) {
+        List<TicketType> result = new ArrayList<>();
+        for (Node node : rows.getChildren()) if (node instanceof HBox row && row.getProperties().containsKey("ticket-edit")) {
+            String id = (String) row.getProperties().get("ticket-edit"); int sold = (int) row.getProperties().get("ticket-sold");
+            String name = ((TextField) row.getChildren().get(0)).getText().trim();
+            BigDecimal price = new BigDecimal(((TextField) row.getChildren().get(1)).getText().trim());
+            int quantity = Integer.parseInt(((TextField) row.getChildren().get(2)).getText().trim());
+            LocalDateTime start = LocalDateTime.parse(((TextField) row.getChildren().get(3)).getText().trim());
+            LocalDateTime end = LocalDateTime.parse(((TextField) row.getChildren().get(4)).getText().trim());
+            result.add(new TicketType(id.isBlank() ? java.util.UUID.randomUUID().toString() : id, event.id(), name, name + " ticket", price, quantity, sold, start, end));
+        }
+        if (result.isEmpty()) throw new IllegalArgumentException("Add at least one ticket category for a ticketed event.");
+        return result;
     }
 
     private void cancelReservation(VenueReservation r) {

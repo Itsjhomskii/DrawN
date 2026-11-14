@@ -9,3 +9,4 @@ operationId,accountId,type,amount,balanceBefore,balanceAfter,timestamp
 "PAYMENT:venue:3a83a9c7-816a-446c-a81e-aa5823734133:agtotojhomar@gmail.com","agtotojhomar@gmail.com","PAYMENT:venue:3a83a9c7-816a-446c-a81e-aa5823734133","733.33","1007510.00","1006776.67","2026-11-11T16:21:00"
 "PAYMENT:venue:0e88ae80-fab9-40b1-80fb-d6a7db16aacc:agtotojhomar@gmail.com","agtotojhomar@gmail.com","PAYMENT:venue:0e88ae80-fab9-40b1-80fb-d6a7db16aacc","132000.00","1006776.67","874776.67","2026-11-11T16:22:00"
 "PAYMENT:venue:pending-venue-test-2027:agtotojhomar@gmail.com","agtotojhomar@gmail.com","PAYMENT:venue:pending-venue-test-2027","7000.00","874776.67","867776.67","2026-11-11T16:23:00"
+"PAYMENT:ticket:2a6ac1ac-2a3c-4ac8-8889-8919f598595f:+639814133121","+639814133121","PAYMENT:ticket:2a6ac1ac-2a3c-4ac8-8889-8919f598595f","10","500000.00","499990.00","2026-11-13T12:58:48.423412900"
