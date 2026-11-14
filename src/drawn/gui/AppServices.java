@@ -37,6 +37,7 @@ public final class AppServices {
     private final drawn.service.customer.CustomerVenueWorkflowService venueWorkflow;
     private final drawn.service.customer.CustomerEventCreationService eventCreation;
     private final AdminDashboardService adminDashboard;
+    private final PrivateEventAccessRepository privateAccess;
 
     public AppServices(Path dataDirectory) {
         accounts = new AccountStore(dataDirectory);
@@ -45,7 +46,7 @@ public final class AppServices {
         PaymentRepository paymentRepository = new PaymentRepository(dataDirectory);
         TicketRepository ticketRepository = new TicketRepository(dataDirectory);
         TransactionJournal journal = new TransactionJournal(dataDirectory);
-        PrivateEventAccessRepository privateAccess = new PrivateEventAccessRepository(dataDirectory);
+        privateAccess = new PrivateEventAccessRepository(dataDirectory);
         customerAccess = new CustomerAccessService(accounts);
         earnings = new OrganizerEarningsService(eventRepository, ticketRepository, paymentRepository, CommissionPolicy.configured());
         events = new EventService(eventRepository, reservationRepository, ticketRepository, paymentRepository, Clock.systemDefaultZone());
@@ -79,4 +80,14 @@ public final class AppServices {
     public drawn.service.customer.CustomerVenueWorkflowService venueWorkflow() { return venueWorkflow; }
     public drawn.service.customer.CustomerEventCreationService eventCreationService() { return eventCreation; }
     public AdminDashboardService adminDashboard() { return adminDashboard; }
+
+    // Compatibility accessors used by the customer GUI restored from commit 6605d3b.
+    public EventService eventService() { return events; }
+    public ReservationService reservationService() { return reservations; }
+    public PaymentService paymentService() { return payment; }
+    public EventCancellationService cancellationService() { return cancellation; }
+    public PrivateEventAccessRepository privateEventAccess() { return privateAccess; }
+    public java.util.List<AccountStore.Transaction> walletTransactions(AccountStore.Account account) throws IOException {
+        return accounts.loadTransactions(account.getId());
+    }
 }
