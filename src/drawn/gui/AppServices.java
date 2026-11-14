@@ -1,8 +1,7 @@
 package drawn.gui;
 
 import drawn.service.customer.CustomerAccessService;
-import drawn.service.customer.CustomerEventCreationService;
-import drawn.service.customer.CustomerVenueWorkflowService;
+import drawn.service.customer.CustomerWorkflowService;
 import drawn.service.event.EventCancellationService;
 import drawn.service.event.EventPublishingService;
 import drawn.service.event.EventService;
@@ -17,68 +16,61 @@ import drawn.storage.PrivateEventAccessRepository;
 import drawn.storage.ReservationRepository;
 import drawn.storage.TicketRepository;
 import drawn.storage.TransactionJournal;
-import drawn.storage.VenueReceiptRepository;
 
 import java.io.IOException;
 import java.nio.file.Path;
+import java.time.Clock;
 
-/** GUI composition root; all stateful operations remain in existing services. */
+/** GUI composition root, wired the same way as drawn.DrawN; all stateful operations remain in existing services. */
 public final class AppServices {
     private final AccountStore accounts;
-    private final EventPublishingService publishing;
     private final CustomerAccessService customerAccess;
-    private final EventService eventService;
-    private final ReservationService reservationService;
-    private final PaymentService paymentService;
-    private final EventCancellationService cancellationService;
-    private final PrivateEventAccessRepository privateEventAccess;
-    private final CustomerVenueWorkflowService venueWorkflow;
-    private final CustomerEventCreationService eventCreationService;
-    private final VenueReceiptRepository venueReceipts;
+    private final EventService events;
+    private final ReservationService reservations;
+    private final PaymentService payment;
+    private final EventPublishingService publishing;
+    private final EventCancellationService cancellation;
+    private final OrganizerEarningsService earnings;
+    private final CustomerWorkflowService workflow;
+    private final drawn.service.customer.CustomerVenueWorkflowService venueWorkflow;
+    private final drawn.service.customer.CustomerEventCreationService eventCreation;
 
     public AppServices(Path dataDirectory) {
         accounts = new AccountStore(dataDirectory);
-        EventRepository events = new EventRepository(dataDirectory);
-        ReservationRepository reservations = new ReservationRepository(dataDirectory);
-        PaymentRepository payments = new PaymentRepository(dataDirectory);
-        TicketRepository tickets = new TicketRepository(dataDirectory);
-        venueReceipts = new VenueReceiptRepository(dataDirectory);
+        EventRepository eventRepository = new EventRepository(dataDirectory);
+        ReservationRepository reservationRepository = new ReservationRepository(dataDirectory);
+        PaymentRepository paymentRepository = new PaymentRepository(dataDirectory);
+        TicketRepository ticketRepository = new TicketRepository(dataDirectory);
         TransactionJournal journal = new TransactionJournal(dataDirectory);
-        PaymentService payment = new PaymentService(accounts, reservations, payments, journal, events);
-        eventService = new EventService(events, reservations, tickets, payments, java.time.Clock.systemDefaultZone());
-        reservationService = new ReservationService(events, reservations, java.time.Clock.systemDefaultZone(), payment);
-        new OrganizerEarningsService(events, tickets, payments, CommissionPolicy.configured());
-        publishing = new EventPublishingService(events, reservations, tickets, payments, accounts, journal);
-        cancellationService = new EventCancellationService(events, reservations, tickets, payments, accounts, journal);
+        PrivateEventAccessRepository privateAccess = new PrivateEventAccessRepository(dataDirectory);
         customerAccess = new CustomerAccessService(accounts);
-        privateEventAccess = new PrivateEventAccessRepository(dataDirectory);
-        paymentService = payment;
-        venueWorkflow = new CustomerVenueWorkflowService(accounts, reservations, reservationService, payment);
-        eventCreationService = new CustomerEventCreationService(eventService, publishing, privateEventAccess);
-        this.payment = payment;
-        this.cancellation = cancellationService;
+        earnings = new OrganizerEarningsService(eventRepository, ticketRepository, paymentRepository, CommissionPolicy.configured());
+        events = new EventService(eventRepository, reservationRepository, ticketRepository, paymentRepository, Clock.systemDefaultZone());
+        payment = new PaymentService(accounts, reservationRepository, paymentRepository, journal, eventRepository);
+        reservations = new ReservationService(eventRepository, reservationRepository, Clock.systemDefaultZone(), payment);
+        publishing = new EventPublishingService(eventRepository, reservationRepository, ticketRepository, paymentRepository, accounts, journal);
+        cancellation = new EventCancellationService(eventRepository, reservationRepository, ticketRepository, paymentRepository, accounts, journal);
+        workflow = new CustomerWorkflowService(accounts, eventRepository, reservationRepository, ticketRepository,
+                privateAccess, reservations, payment, events, publishing);
+        venueWorkflow = new drawn.service.customer.CustomerVenueWorkflowService(accounts, reservationRepository, reservations, payment);
+        eventCreation = new drawn.service.customer.CustomerEventCreationService(events, publishing, privateAccess);
     }
-
-    private final PaymentService payment;
-    private final EventCancellationService cancellation;
 
     public void recoverPending() throws IOException {
         payment.recoverPending();
         publishing.recoverPending();
         cancellation.recoverPending();
     }
-    public CustomerAccessService customerAccess() { return customerAccess; }
-    public EventPublishingService publishing() { return publishing; }
-    public EventService eventService() { return eventService; }
-    public ReservationService reservationService() { return reservationService; }
-    public PaymentService paymentService() { return paymentService; }
-    public EventCancellationService cancellationService() { return cancellationService; }
+
     public AccountStore accounts() { return accounts; }
-    public PrivateEventAccessRepository privateEventAccess() { return privateEventAccess; }
-    public CustomerVenueWorkflowService venueWorkflow() { return venueWorkflow; }
-    public CustomerEventCreationService eventCreationService() { return eventCreationService; }
-    public VenueReceiptRepository venueReceipts() { return venueReceipts; }
-    public java.util.List<AccountStore.Transaction> walletTransactions(AccountStore.Account account) throws IOException {
-        return accounts.loadTransactions(account.getId());
-    }
+    public CustomerAccessService customerAccess() { return customerAccess; }
+    public EventService events() { return events; }
+    public ReservationService reservations() { return reservations; }
+    public PaymentService payment() { return payment; }
+    public EventPublishingService publishing() { return publishing; }
+    public EventCancellationService cancellation() { return cancellation; }
+    public OrganizerEarningsService earnings() { return earnings; }
+    public CustomerWorkflowService workflow() { return workflow; }
+    public drawn.service.customer.CustomerVenueWorkflowService venueWorkflow() { return venueWorkflow; }
+    public drawn.service.customer.CustomerEventCreationService eventCreationService() { return eventCreation; }
 }
