@@ -3,9 +3,15 @@ package drawn.gui;
 import drawn.gui.admin.AdminView;
 import drawn.gui.views.LoginView;
 import drawn.gui.views.MainShell;
+import drawn.gui.views.RegisterView;
 import drawn.model.event.Event;
 import drawn.service.admin.AdminService;
+import javafx.animation.FadeTransition;
+import javafx.animation.Interpolator;
+import javafx.animation.ParallelTransition;
+import javafx.animation.TranslateTransition;
 import javafx.application.Application;
+import javafx.scene.Node;
 import javafx.scene.Parent;
 import javafx.scene.Scene;
 import javafx.scene.control.Alert;
@@ -14,6 +20,7 @@ import javafx.stage.Stage;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.util.List;
+import javafx.util.Duration;
 
 /** JavaFX customer entry point. The console application remains drawn.DrawN. */
 public final class DrawNApplication extends Application {
@@ -22,6 +29,8 @@ public final class DrawNApplication extends Application {
     private AppServices services;
     private Stage stage;
     private Scene scene;
+    private boolean authTransitionRunning;
+    private static final Duration AUTH_TRANSITION_HALF = Duration.millis(140);
 
     @Override public void start(Stage primaryStage) {
         stage = primaryStage;
@@ -39,8 +48,60 @@ public final class DrawNApplication extends Application {
         }
     }
 
-    public void showLogin() { setRootForView(new LoginView(this, services, session).view()); }
+    public void showLogin() { switchAuthForm(new LoginView(this, services, session).view(), false); }
+    public void showRegister() { switchAuthForm(new RegisterView(this, services, session).view(), true); }
     public void showShell() { setRootForView(new MainShell(this, services, session).view()); }
+
+    private void switchAuthForm(Parent nextRoot, boolean toRegister) {
+        if (scene == null) { setRootForView(nextRoot); focusFirstField(nextRoot); return; }
+        if (authTransitionRunning) return;
+        Node oldCard = findById(scene.getRoot(), "auth-form-card");
+        Node newCard = findById(nextRoot, "auth-form-card");
+        if (oldCard == null || newCard == null) { setRootForView(nextRoot); return; }
+
+        authTransitionRunning = true;
+        double direction = toRegister ? 1 : -1;
+        oldCard.setMouseTransparent(true);
+        FadeTransition fadeOut = new FadeTransition(AUTH_TRANSITION_HALF, oldCard);
+        fadeOut.setFromValue(1); fadeOut.setToValue(0); fadeOut.setInterpolator(Interpolator.EASE_BOTH);
+        TranslateTransition slideOut = new TranslateTransition(AUTH_TRANSITION_HALF, oldCard);
+        slideOut.setFromX(0); slideOut.setToX(direction * 24); slideOut.setInterpolator(Interpolator.EASE_BOTH);
+        ParallelTransition exit = new ParallelTransition(fadeOut, slideOut);
+        exit.setOnFinished(event -> {
+            scene.setRoot(nextRoot);
+            newCard.setOpacity(0);
+            newCard.setTranslateX(-direction * 24);
+            newCard.setMouseTransparent(false);
+            FadeTransition fadeIn = new FadeTransition(AUTH_TRANSITION_HALF, newCard);
+            fadeIn.setFromValue(0); fadeIn.setToValue(1); fadeIn.setInterpolator(Interpolator.EASE_BOTH);
+            TranslateTransition slideIn = new TranslateTransition(AUTH_TRANSITION_HALF, newCard);
+            slideIn.setFromX(-direction * 24); slideIn.setToX(0); slideIn.setInterpolator(Interpolator.EASE_BOTH);
+            ParallelTransition enter = new ParallelTransition(fadeIn, slideIn);
+            enter.setOnFinished(done -> {
+                newCard.setOpacity(1); newCard.setTranslateX(0);
+                authTransitionRunning = false;
+                focusFirstField(nextRoot);
+            });
+            enter.play();
+        });
+        exit.play();
+    }
+
+    private static void focusFirstField(Parent root) {
+        Node first = findById(root, "auth-first-field");
+        if (first != null) javafx.application.Platform.runLater(first::requestFocus);
+    }
+
+    private static Node findById(Node node, String id) {
+        if (id.equals(node.getId())) return node;
+        if (node instanceof Parent parent) {
+            for (Node child : parent.getChildrenUnmodifiable()) {
+                Node match = findById(child, id);
+                if (match != null) return match;
+            }
+        }
+        return null;
+    }
 
     /** Opens the admin dashboard when the credentials are the admin's; false means "not the admin". */
     public boolean signInAdmin(String email, String password) {
