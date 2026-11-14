@@ -89,6 +89,17 @@ public final class EventService {
     /** Saves configured event details separately from the later publication action. */
     public Event createConfiguredForApprovedReservation(Customer organizer, EventDraft draft, String reservationId)
             throws IOException {
+        return createForApprovedReservation(organizer, draft, reservationId, EventApprovalStatus.APPROVED);
+    }
+
+    /** Creates a complete customer event after its venue reservation has been approved. */
+    public Event createPublishedForApprovedReservation(Customer organizer, EventDraft draft, String reservationId)
+            throws IOException {
+        return createForApprovedReservation(organizer, draft, reservationId, EventApprovalStatus.PUBLISHED);
+    }
+
+    private Event createForApprovedReservation(Customer organizer, EventDraft draft, String reservationId,
+                                               EventApprovalStatus initialStatus) throws IOException {
         validateDraft(organizer, draft);
         if (draft.purpose() == EventPurpose.TICKETED_EVENT && draft.ticketCategories().isEmpty())
             throw new IllegalArgumentException("Commercial events need at least one ticket category.");
@@ -99,7 +110,7 @@ public final class EventService {
         validateReservationForNewEvent(organizer, draft, reservation);
         Event event = new Event(UUID.randomUUID().toString(), organizer.getId(), draft.name(), draft.description(),
                 draft.type(), draft.purpose(), draft.visibility(), draft.date(), draft.startTime(), draft.endTime(),
-                draft.expectedAttendance(), draft.venue(), EventApprovalStatus.APPROVED, LocalDateTime.now(clock),
+                draft.expectedAttendance(), draft.venue(), initialStatus, LocalDateTime.now(clock),
                 draft.ticketCategories());
         boolean saved = false;
         try {
