@@ -111,7 +111,7 @@ public final class DrawNApplication extends Application {
             @Override public List<Event> approvedPublicEvents() throws IOException { return services.events().publicApprovedEvents(); }
             @Override public void setRoot(Parent root) { setRootForView(root); }
             @Override public void logout() { showLogin(); }
-        }, adminService).view());
+        }, adminService, services.adminDashboard(), email.trim()).view());
         String adminCss = getClass().getResource("/drawn/gui/admin/admin.css").toExternalForm();
         if (!scene.getStylesheets().contains(adminCss)) scene.getStylesheets().add(adminCss);
         return true;

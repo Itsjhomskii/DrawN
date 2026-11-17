@@ -7,6 +7,7 @@ import drawn.model.payment.PaymentStatus;
 import drawn.model.payment.PaymentTransaction;
 import drawn.model.ticket.TicketPurchaseStatus;
 import drawn.model.ticket.TicketType;
+import drawn.service.event.EventService;
 import drawn.service.event.ReservationService;
 import drawn.service.payment.CommissionPolicy;
 import drawn.storage.AccountStore;
@@ -44,13 +45,14 @@ public final class AdminDashboardService {
     private final TransactionJournal journal;
     private final CommissionPolicy commission;
     private final AdminAuditLog audit;
+    private final EventService eventService;
 
     public AdminDashboardService(ReservationService reservations, EventRepository events, TicketRepository tickets,
                                  PaymentRepository payments, AccountStore accounts, TransactionJournal journal,
-                                 CommissionPolicy commission, AdminAuditLog audit) {
+                                 CommissionPolicy commission, AdminAuditLog audit, EventService eventService) {
         this.reservations = reservations; this.events = events; this.tickets = tickets;
         this.payments = payments; this.accounts = accounts; this.journal = journal;
-        this.commission = commission; this.audit = audit;
+        this.commission = commission; this.audit = audit; this.eventService = eventService;
     }
 
     // ---------------------------------------------------------------- read models
@@ -64,9 +66,17 @@ public final class AdminDashboardService {
                             String customerName, int quantity, BigDecimal amount, TicketPurchaseStatus status,
                             LocalDateTime timestamp) { }
 
-    /** source is PAYMENT (payment-transactions.csv) or WALLET (wallet-transactions.csv). */
+    /**
+     * source is PAYMENT (payment-transactions.csv) or WALLET (wallet-transactions.csv). A wallet row that has a
+     * matching ledger row is dropped, so each charge or refund appears once. purpose is null for wallet-only rows
+     * such as top-ups; related names the venue booking or event the referenceId points at, when known.
+     */
     public record TransactionRow(String source, String id, String customerId, String customerName, String description,
-                                 BigDecimal amount, String status, LocalDateTime timestamp) { }
+                                 BigDecimal amount, String status, LocalDateTime timestamp,
+                                 String referenceId, PaymentPurpose purpose, String related) { }
+
+    public record PendingEvent(String eventId, String name, String organizerId, String organizerName,
+                               java.time.LocalDate date, String venueName) { }
 
     public record RevenueSummary(BigDecimal venueRevenue, BigDecimal ticketGross, BigDecimal platformCommission,
                                  BigDecimal refunds) { }
@@ -165,24 +175,45 @@ public final class AdminDashboardService {
 
     // ---------------------------------------------------------------- transactions
 
-    /** Payment-ledger rows and wallet rows merged into one newest-first list. */
+    /**
+     * Payment-ledger rows and wallet rows merged into one newest-first list. A wallet charge or refund whose
+     * customer, purpose, status, reference id and amount match a ledger row is the same money movement, so only
+     * the ledger row is kept. Refunds stay separate rows from the charges they reverse.
+     */
     public List<TransactionRow> transactions(TransactionFilter filter) throws IOException {
         Map<String, String> names = customerNames();
+        Map<String, String> related = relatedNames();
+        List<PaymentTransaction> ledger = payments.findAll();
+        Map<String, Integer> unmatchedLedger = new HashMap<>();
+        for (PaymentTransaction tx : ledger)
+            unmatchedLedger.merge(linkKey(tx.customerId(), tx.purpose(), tx.status(), tx.referenceId(), tx.amount()), 1, Integer::sum);
+
         List<TransactionRow> rows = new ArrayList<>();
-        for (PaymentTransaction tx : payments.findAll()) {
+        for (PaymentTransaction tx : ledger) {
             if (filter.customerId() != null && !filter.customerId().equals(tx.customerId())) continue;
             if (filter.purpose() != null && filter.purpose() != tx.purpose()) continue;
             rows.add(new TransactionRow("PAYMENT", tx.id(), tx.customerId(),
                     names.getOrDefault(tx.customerId(), tx.customerId()), tx.purpose().name(), tx.amount(),
-                    tx.status().name(), tx.timestamp()));
+                    tx.status().name(), tx.timestamp(), tx.referenceId(), tx.purpose(),
+                    related.getOrDefault(tx.referenceId(), "")));
         }
         // Wallet rows have no purpose, so a purpose filter means "payments only".
         if (filter.purpose() == null) {
+            Map<String, String> editedReservation = venueEditReservations();
             for (AccountStore.Account account : accounts.loadAccounts()) {
                 if (filter.customerId() != null && !filter.customerId().equals(account.getId())) continue;
-                for (AccountStore.Transaction tx : accounts.loadTransactions(account.getId()))
+                for (AccountStore.Transaction tx : accounts.loadTransactions(account.getId())) {
+                    WalletLink link = walletLink(tx.type(), editedReservation);
+                    if (link != null) {
+                        String key = linkKey(account.getId(), link.purpose(), link.status(), link.referenceId(), tx.amount());
+                        int left = unmatchedLedger.getOrDefault(key, 0);
+                        if (left > 0) { unmatchedLedger.put(key, left - 1); continue; }
+                    }
                     rows.add(new TransactionRow("WALLET", account.getId() + "@" + tx.timestamp(), account.getId(),
-                            account.getFullName(), tx.type(), tx.amount(), "BALANCE " + tx.balanceAfter(), tx.timestamp()));
+                            account.getFullName(), tx.type(), tx.amount(), "BALANCE " + tx.balanceAfter(), tx.timestamp(),
+                            link == null ? "" : link.referenceId(), link == null ? null : link.purpose(),
+                            link == null ? "" : related.getOrDefault(link.referenceId(), "")));
+                }
             }
         }
         rows.removeIf(r -> (filter.from() != null && r.timestamp().isBefore(filter.from()))
@@ -218,7 +249,78 @@ public final class AdminDashboardService {
         return journal.unfinished();
     }
 
+    // ---------------------------------------------------------------- event approval
+
+    /** Customer-submitted events waiting for review (EventService's PENDING status), separate from venue approval. */
+    public List<PendingEvent> pendingEvents() throws IOException {
+        Map<String, String> names = customerNames();
+        List<PendingEvent> result = new ArrayList<>();
+        for (Event e : eventService.pendingReview())
+            result.add(new PendingEvent(e.id(), e.name(), e.organizerId(), names.getOrDefault(e.organizerId(), e.organizerId()),
+                    e.date(), e.venue().name()));
+        return result;
+    }
+
+    public void reviewEvent(String adminId, String eventId, boolean approve) throws IOException {
+        eventService.review(eventId, approve);
+        audit.record(adminId, approve ? "APPROVE_EVENT" : "REJECT_EVENT", eventId, "");
+    }
+
+    /** Recorded admin decisions, newest first. */
+    public List<AdminAuditLog.Decision> decisions() throws IOException {
+        return audit.decisions();
+    }
+
     // ---------------------------------------------------------------- helpers
+
+    private record WalletLink(PaymentPurpose purpose, PaymentStatus status, String referenceId) { }
+
+    /** Wallet type prefixes written by PaymentService, EventPublishingService and EventCancellationService. */
+    private static final String[][] WALLET_LINKS = {
+            {"PAYMENT:venue:", "VENUE_BOOKING", "PAID"},
+            {"REFUND:venue:", "VENUE_BOOKING", "REFUNDED"},
+            {"PAYMENT:venue-edit:", "VENUE_BOOKING", "PAID"},
+            {"REFUND:venue-edit:", "VENUE_BOOKING", "REFUNDED"},
+            {"PAYMENT:ticket:", "TICKET_RESERVATION", "PAID"},
+            {"REFUND:ticket-cancellation:", "TICKET_RESERVATION", "REFUNDED"},
+            {"REFUND:ticket-refund:", "TICKET_RESERVATION", "REFUNDED"},
+            {"CREDIT:ticket-cancellation-fee:", "TICKET_CANCELLATION_FEE", "PAID"}};
+
+    private static WalletLink walletLink(String walletType, Map<String, String> editedReservation) {
+        for (String[] link : WALLET_LINKS) {
+            if (!walletType.startsWith(link[0])) continue;
+            String reference = walletType.substring(link[0].length());
+            // A venue edit's wallet reference is its journal operation id; the journal names the reservation.
+            if (link[0].contains("venue-edit")) reference = editedReservation.get(reference);
+            return reference == null ? null
+                    : new WalletLink(PaymentPurpose.valueOf(link[1]), PaymentStatus.valueOf(link[2]), reference);
+        }
+        return null;
+    }
+
+    private static String linkKey(String customerId, PaymentPurpose purpose, PaymentStatus status, String referenceId,
+                                  BigDecimal amount) {
+        return customerId + "|" + purpose + "|" + status + "|" + referenceId + "|" + amount.stripTrailingZeros().toPlainString();
+    }
+
+    private Map<String, String> venueEditReservations() throws IOException {
+        Map<String, String> map = new HashMap<>();
+        for (TransactionJournal.Entry entry : journal.all())
+            if (entry.kind().equals("VENUE_RESERVATION_EDIT") && entry.payload().size() > 1) map.put(entry.id(), entry.payload().get(1));
+        return map;
+    }
+
+    /** reservation id → "Venue: …", ticket purchase id → "Event: …". */
+    private Map<String, String> relatedNames() throws IOException {
+        Map<String, String> map = new HashMap<>();
+        for (VenueReservation r : reservations.all()) map.put(r.id(), "Venue: " + r.venueName() + " (" + r.date() + ")");
+        Map<String, Event> eventById = eventsById();
+        for (TicketRepository.Purchase p : tickets.allPurchaseRecords()) {
+            Event event = eventById.get(p.eventId());
+            map.put(p.id(), "Event: " + (event == null ? "(deleted event)" : event.name()));
+        }
+        return map;
+    }
 
     private Map<String, String> customerNames() throws IOException {
         Map<String, String> names = new HashMap<>();

@@ -65,7 +65,7 @@ public final class AppServices {
         eventCreation = new drawn.service.customer.CustomerEventCreationService(events, publishing, privateAccess);
         venueExtensions = new VenueExtensionService(events, reservations, extensionRepository, Clock.systemDefaultZone());
         adminDashboard = new AdminDashboardService(reservations, eventRepository, ticketRepository, paymentRepository,
-                accounts, journal, CommissionPolicy.configured(), new AdminAuditLog(dataDirectory, Clock.systemDefaultZone()));
+                accounts, journal, CommissionPolicy.configured(), new AdminAuditLog(dataDirectory, Clock.systemDefaultZone()), events);
     }
 
     public void recoverPending() throws IOException {
