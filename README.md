@@ -65,6 +65,12 @@ These assertion-based checks use temporary data directories and do not write to 
 
 The GUI lives in `src/drawn/gui` and only calls existing services. The customer screens use `drawn.service.customer.CustomerWorkflowService`; the admin screen uses `drawn.service.admin.AdminService`.
 
+### Venue details preview data
+
+The Venue Details screen uses clearly labeled fictional demo ratings and reviews for presentation layout only. They are not Google data and are not statements about the selected venue. The page links to Google Maps for current venue information; DrawN does not scrape or store Google review content. No Google API key or billing setup is used. Verified venue photos can be added under `src/drawn/gui/images/venues/` using the venue name as a lowercase, hyphenated `.jpg` or `.png` filename; if none exists, the page shows a neutral category placeholder.
+
+The Wallet & Transactions page calculates totals from the signed-in account's existing wallet transaction ledger. Top-ups include `INITIAL_FUNDING` and `TOP_UP`; gross spending sums recorded `PAYMENT:` entries; refunds sum recorded `REFUND:` entries and are shown separately. The `Pending` filter replaces the separate venue-reservations filter and groups reservation records with their current approval and payment statuses.
+
 The GUI smoke test clicks through every screen against a temporary data folder (your `data/` is not touched). Pass a folder to also save a screenshot of each page:
 
 ```powershell

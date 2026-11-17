@@ -165,6 +165,17 @@ public final class EventService {
     }
 
     /** Updates event details while preserving the approved reservation's venue and schedule. */
+    public void validateConfiguredEvent(Customer organizer, String eventId, EventDraft draft) throws IOException {
+        Event existing = owned(organizer, eventId);
+        if (existing.approvalStatus() != EventApprovalStatus.APPROVED
+                && existing.approvalStatus() != EventApprovalStatus.PUBLISHED)
+            throw new IllegalArgumentException("Only approved or published events can be edited.");
+        EventDraft fixedSchedule = new EventDraft(draft.name(), draft.description(), draft.type(), draft.purpose(),
+                draft.visibility(), existing.date(), existing.startTime(), existing.endTime(), draft.expectedAttendance(),
+                existing.venue(), draft.ticketCategories());
+        validateDraft(organizer, fixedSchedule);
+    }
+
     public Event editConfiguredEvent(Customer organizer, String eventId, EventDraft draft) throws IOException {
         Event existing = owned(organizer, eventId);
         if (existing.approvalStatus() != EventApprovalStatus.APPROVED
@@ -272,14 +283,9 @@ public final class EventService {
         if (!reservation.date().equals(event.date()) || !reservation.startTime().equals(event.startTime())
                 || !reservation.endTime().equals(event.endTime()) || !reservation.venueName().equals(event.venue().name()))
             throw new IllegalArgumentException("The associated reservation must match the event venue and schedule.");
-        for (VenueReservation other : reservations.findAll()) {
-            if (other.id().equals(reservation.id()) || !other.venueName().equals(reservation.venueName())
-                    || !other.date().equals(reservation.date())) continue;
-            boolean active = other.status() == BookingStatus.APPROVED || other.status() == BookingStatus.CONFIRMED;
-            boolean overlaps = reservation.startTime().isBefore(other.endTime())
-                    && other.startTime().isBefore(reservation.endTime());
-            if (active && overlaps) throw new IllegalArgumentException("The reservation conflicts with another approved booking.");
-        }
+        new ReservationService(repository, reservations, clock)
+                .ensureScheduleAvailable(reservation.venueName(), reservation.date(), reservation.startTime(),
+                        reservation.endTime(), reservation.id());
     }
 
     private List<TicketCategory> validateDraft(Customer organizer, EventDraft draft) {
@@ -308,6 +314,9 @@ public final class EventService {
         if (draft.expectedAttendance() > draft.venue().capacity()) throw new IllegalArgumentException("Expected attendance exceeds the selected venue capacity.");
         List<TicketCategory> categories = List.copyOf(draft.ticketCategories());
         if (draft.purpose() == EventPurpose.SOCIAL_GATHERING && !categories.isEmpty()) throw new IllegalArgumentException("Social gatherings cannot have ticket categories.");
+        int totalTicketQuantity = categories.stream().mapToInt(TicketCategory::quantity).sum();
+        if (totalTicketQuantity > draft.venue().capacity())
+            throw new IllegalArgumentException("Total ticket quantity exceeds venue capacity.");
         Set<String> categoryNames = new HashSet<>();
         for (TicketCategory category : categories) {
             if (!categoryNames.add(category.name().toLowerCase(Locale.ROOT))) throw new IllegalArgumentException("Ticket category names must be unique.");

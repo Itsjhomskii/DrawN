@@ -16,6 +16,7 @@ import drawn.storage.PaymentRepository;
 import drawn.storage.ReservationRepository;
 import drawn.storage.TicketRepository;
 import drawn.storage.TransactionJournal;
+import drawn.storage.VenueExtensionRepository;
 
 import java.io.IOException;
 import java.time.Clock;
@@ -32,17 +33,24 @@ public final class EventCancellationService {
     private final PaymentRepository payments;
     private final AccountStore accounts;
     private final TransactionJournal journal;
+    private final VenueExtensionRepository extensions;
     private final Clock clock;
 
     public EventCancellationService(EventRepository events, ReservationRepository reservations, TicketRepository tickets,
                                     PaymentRepository payments, AccountStore accounts, TransactionJournal journal) {
-        this(events, reservations, tickets, payments, accounts, journal, Clock.systemDefaultZone());
+        this(events, reservations, tickets, payments, accounts, journal, Clock.systemDefaultZone(), null);
     }
     public EventCancellationService(EventRepository events, ReservationRepository reservations, TicketRepository tickets,
                                     PaymentRepository payments, AccountStore accounts, TransactionJournal journal, Clock clock) {
+        this(events, reservations, tickets, payments, accounts, journal, clock, null);
+    }
+    public EventCancellationService(EventRepository events, ReservationRepository reservations, TicketRepository tickets,
+                                    PaymentRepository payments, AccountStore accounts, TransactionJournal journal,
+                                    Clock clock, VenueExtensionRepository extensions) {
         this.events=Objects.requireNonNull(events);this.reservations=Objects.requireNonNull(reservations);
         this.tickets=Objects.requireNonNull(tickets);this.payments=Objects.requireNonNull(payments);
         this.accounts=Objects.requireNonNull(accounts);this.journal=Objects.requireNonNull(journal);this.clock=Objects.requireNonNull(clock);
+        this.extensions=extensions;
     }
 
     public Event cancel(Customer organizer, String eventId) throws IOException {
@@ -118,6 +126,7 @@ public final class EventCancellationService {
             journal.state(refundOperation,"COMPLETED");
         }
         events.updateStatus(eventId,EventApprovalStatus.CANCELLED);
+        if (extensions != null) extensions.cancelPendingForEvent(eventId);
         journal.state(operation,"COMPLETED");
     }
 

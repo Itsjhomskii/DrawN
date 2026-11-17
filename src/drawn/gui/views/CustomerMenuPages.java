@@ -14,10 +14,15 @@ import javafx.geometry.Pos;
 import javafx.scene.Node;
 import javafx.scene.control.*;
 import javafx.scene.layout.*;
+import javafx.scene.image.Image;
+import javafx.scene.image.ImageView;
+import javafx.scene.shape.Rectangle;
 import javafx.util.StringConverter;
 
 import java.io.IOException;
 import java.math.BigDecimal;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
 import java.time.LocalTime;
 import java.util.ArrayList;
@@ -26,15 +31,27 @@ import java.util.function.Consumer;
 
 /** Builds customer workflow pages. Mutations are delegated to the established services. */
 final class CustomerMenuPages {
+    private static final List<DemoReview> DEMO_REVIEWS = List.of(
+            new DemoReview("Demo Guest 01", 5, "A welcoming setting made it easy for our group to relax and enjoy the occasion."),
+            new DemoReview("Demo Guest 02", 4, "The evening felt well paced, and the space gave everyone room to connect."),
+            new DemoReview("Demo Guest 03", 3, "A pleasant example of the kind of venue details customers might share."),
+            new DemoReview("Demo Guest 04", 5, "A polished atmosphere and a memorable backdrop for a special gathering."));
     private final AppServices services;
     private final AppSession session;
     private final Consumer<String> navigate;
+    private final Consumer<Venue> venueRequest;
+    private final Runnable backNavigation;
+    private Venue detailVenue;
     private String venueSearchText = "";
     private String venueCategoryFilter = "All categories";
     private String venueEligibilityFilter = "Any event type";
+    private boolean ownerEventsCollapsed;
+    private TextField joinKeywordField;
 
-    CustomerMenuPages(AppServices services, AppSession session, Consumer<String> navigate) {
+    CustomerMenuPages(AppServices services, AppSession session, Consumer<String> navigate,
+                      Consumer<Venue> venueRequest, Runnable backNavigation) {
         this.services = services; this.session = session; this.navigate = navigate;
+        this.venueRequest = venueRequest; this.backNavigation = backNavigation;
     }
 
     Node page(String name) {
@@ -42,6 +59,7 @@ final class CustomerMenuPages {
             return switch (name) {
                 case "Explore Events" -> exploreEvents();
                 case "Explore Venues" -> exploreVenues();
+                case "Venue Details" -> venueDetails();
                 case "My Events" -> myEvents();
                 case "Venue Reservations" -> reservations();
                 case "My Tickets" -> tickets();
@@ -68,11 +86,80 @@ final class CustomerMenuPages {
     }
 
     private Node exploreEvents() throws IOException {
-        List<Event> events = services.publishing().publishedEvents();
-        VBox content = new VBox(14, title("Explore Events"), body("Browse public events and view ticket availability."));
-        if (events.isEmpty()) content.getChildren().add(emptyState("No public events are available yet."));
-        for (Event event : events) content.getChildren().add(eventCard(event, false));
+        List<Event> owned = services.eventService().eventsFor(session.customer()).stream()
+                .filter(event -> event.approvalStatus() == EventApprovalStatus.PUBLISHED).toList();
+        java.util.Set<String> ownedIds = owned.stream().map(Event::id).collect(java.util.stream.Collectors.toSet());
+        List<Event> publicEvents = services.publishing().publishedEvents().stream()
+                .filter(event -> !ownedIds.contains(event.id())).toList();
+
+        TextField search = new TextField();
+        search.setId("explore-event-search");
+        search.setPromptText("Search events");
+        search.setAccessibleText("Search public events by name, description, or venue");
+        joinKeywordField = new TextField();
+        joinKeywordField.setId("explore-keyword");
+        joinKeywordField.setPromptText("Join an event");
+        joinKeywordField.setAccessibleText("Join a private event with its invitation keyword");
+        joinKeywordField.setOnAction(event -> loadPrivateEvents(joinKeywordField.getText(), privateResults));
+        Label separator = new Label("|");
+        separator.getStyleClass().add("secondary-text");
+        HBox searchRow = new HBox(12, search, separator, joinKeywordField);
+        searchRow.getStyleClass().add("explore-event-search-row");
+        HBox.setHgrow(search, Priority.ALWAYS);
+        HBox.setHgrow(joinKeywordField, Priority.ALWAYS);
+
+        VBox ownedCards = new VBox(12);
+        owned.forEach(event -> ownedCards.getChildren().add(eventCard(event, true)));
+        if (owned.isEmpty()) ownedCards.getChildren().add(body("Your published events will appear here."));
+        ownedCards.setVisible(!ownerEventsCollapsed);
+        ownedCards.setManaged(!ownerEventsCollapsed);
+        Button collapseOwned = secondary(ownerEventsCollapsed ? "Show my events" : "Hide my events", () -> { });
+        collapseOwned.setOnAction(event -> {
+            ownerEventsCollapsed = !ownerEventsCollapsed;
+            collapseOwned.setText(ownerEventsCollapsed ? "Show my events" : "Hide my events");
+            ownedCards.setVisible(!ownerEventsCollapsed);
+            ownedCards.setManaged(!ownerEventsCollapsed);
+        });
+        collapseOwned.setId("toggle-my-events");
+        VBox ownedSection = new VBox(10, new HBox(12, title("Your Published Events"), collapseOwned), ownedCards);
+        ownedSection.getStyleClass().add("event-owner-section");
+
+        VBox publicCards = new VBox(12);
+        Runnable refreshPublic = () -> {
+            String query = search.getText() == null ? "" : search.getText().trim().toLowerCase(java.util.Locale.ROOT);
+            List<Event> matches = publicEvents.stream().filter(event -> query.isBlank()
+                    || event.name().toLowerCase(java.util.Locale.ROOT).contains(query)
+                    || event.description().toLowerCase(java.util.Locale.ROOT).contains(query)
+                    || event.venue().name().toLowerCase(java.util.Locale.ROOT).contains(query)).toList();
+            publicCards.getChildren().setAll(matches.stream().map(event -> eventCard(event, false)).toList());
+            if (matches.isEmpty()) publicCards.getChildren().add(emptyState("No public events match your search."));
+        };
+        search.textProperty().addListener((observable, oldValue, newValue) -> refreshPublic.run());
+        refreshPublic.run();
+        privateResults = new VBox(12);
+        privateResults.setId("private-event-results");
+        VBox content = new VBox(16, title("Explore Events"), body("Browse events or enter the keyword from your invitation."),
+                searchRow, ownedSection, Ui.section("Public events"), publicCards, privateResults);
         return pageFrame("Explore Events", content);
+    }
+
+    private VBox privateResults;
+
+    void focusJoinField() {
+        if (joinKeywordField != null) javafx.application.Platform.runLater(joinKeywordField::requestFocus);
+    }
+
+    private void loadPrivateEvents(String keyword, VBox results) {
+        results.getChildren().clear();
+        try {
+            String code = Ui.required(keyword, "Invitation keyword");
+            List<Event> matches = services.workflow().privateEvents(code);
+            results.getChildren().add(title("Private events"));
+            if (matches.isEmpty()) results.getChildren().add(body("No private events matched that keyword."));
+            else matches.forEach(event -> results.getChildren().add(eventCard(event, false)));
+        } catch (Exception ex) {
+            results.getChildren().setAll(title("Private events"), body(message(ex)));
+        }
     }
 
     private Node exploreVenues() {
@@ -91,8 +178,13 @@ final class CustomerMenuPages {
         HBox filters = new HBox(10, search, category, eligibility);
         filters.setAlignment(Pos.CENTER_LEFT);
         HBox.setHgrow(search, Priority.ALWAYS);
-        FlowPane cards = new FlowPane(12, 12);
-        cards.setPrefWrapLength(1000);
+        search.setId("venue-search");
+        category.setId("venue-category-filter");
+        eligibility.setId("venue-event-filter");
+        FlowPane cards = new FlowPane(16, 16);
+        cards.getStyleClass().add("venue-grid");
+        cards.setPrefWrapLength(1050);
+        cards.setMaxWidth(Double.MAX_VALUE);
         Runnable refresh = () -> {
             String query = search.getText() == null ? "" : search.getText().trim().toLowerCase(java.util.Locale.ROOT);
             String selectedCategory = category.getValue();
@@ -108,58 +200,207 @@ final class CustomerMenuPages {
                             || VenueCatalog.categoryOf(v).equals(selectedCategory))
                     .filter(v -> selectedPurpose == null || v.supports(selectedPurpose)).toList();
             cards.getChildren().setAll(matches.stream().map(this::venueCard).toList());
+            resizeVenueCards(cards);
             if (matches.isEmpty()) cards.getChildren().add(emptyState("No venues match those filters."));
         };
+        cards.widthProperty().addListener((o, old, width) -> resizeVenueCards(cards));
         search.textProperty().addListener((o,a,b) -> { venueSearchText = b == null ? "" : b; refresh.run(); });
         category.valueProperty().addListener((o,a,b) -> { venueCategoryFilter = b == null ? "All categories" : b; refresh.run(); });
         eligibility.valueProperty().addListener((o,a,b) -> { venueEligibilityFilter = b == null ? "Any event type" : b; refresh.run(); });
         refresh.run();
-        VBox content = new VBox(14, title("Explore Venues"),
-                body("Browse the venue catalog, compare capacity and rates, then choose a venue to request."), filters, cards);
+        VBox content = new VBox(20, title("Explore Venues"),
+                body("Find the perfect setting for your next event."), filters, cards);
+        cards.prefWidthProperty().bind(content.widthProperty());
         return pageFrame("Explore Venues", content);
     }
 
     private VBox venueCard(Venue venue) {
-        VBox card = dataCard();
-        card.setPrefWidth(310);
-        card.setMinWidth(250);
-        String eligibility = venue.type() == VenueType.BOTH ? "Social and ticketed events"
-                : venue.type() == VenueType.COMMERCIAL ? "Ticketed events" : "Social gatherings";
-        card.getChildren().addAll(title(venue.name()),
-                body(CustomerText.words(VenueCatalog.categoryOf(venue)) + " • " + eligibility),
-                body("Capacity: " + (venue.capacity() == Integer.MAX_VALUE ? "Not specified" : venue.capacity() + " guests")),
-                body("Hourly from PHP " + money(venue.hourlyRate())),
-                body("Half-day from PHP " + money(venue.morningRate())));
-        HBox actions = new HBox(8,
-                secondary("View Details", () -> showVenueDetails(venue)),
-                primary("Select Venue", () -> requestVenue(venue)));
+        VBox card = new VBox(12);
+        card.getStyleClass().addAll("venue-card", "editorial-card", "event-card");
+        card.setMinWidth(220);
+        card.setMaxWidth(Double.MAX_VALUE);
+        card.getChildren().addAll(venuePlaceholder(venue, "venue-image"),
+                new Label(CustomerText.words(VenueCatalog.categoryOf(venue))), title(venue.name()),
+                body(supportedEvents(venue)),
+                body((venue.capacity() == Integer.MAX_VALUE ? "Capacity not specified" : "Up to " + venue.capacity() + " guests")
+                + "  •  Starts at " + startingRate(venue).label()));
+        card.getChildren().get(1).getStyleClass().add("venue-category");
+        Button details = secondary("View Details", () -> showVenueDetails(venue));
+        details.setId("venue-details-" + VenueCatalog.all().indexOf(venue));
+        Button select = primary("Select Venue", () -> venueRequest.accept(venue));
+        select.setId("venue-select-" + VenueCatalog.all().indexOf(venue));
+        HBox actions = new HBox(8, details, select);
         actions.setAlignment(Pos.CENTER_LEFT);
+        actions.getStyleClass().add("venue-card-actions");
         card.getChildren().add(actions);
         return card;
     }
 
     private void showVenueDetails(Venue venue) {
-        Dialog<ButtonType> dialog = new Dialog<>();
-        dialog.setTitle(venue.name());
-        dialog.getDialogPane().getButtonTypes().addAll(new ButtonType("Reserve This Venue", ButtonBar.ButtonData.OK_DONE), ButtonType.CLOSE);
-        String eligibility = venue.type() == VenueType.BOTH ? "Social gatherings and ticketed events"
+        detailVenue = venue;
+        navigate.accept("Venue Details");
+    }
+
+    private Node venueDetails() {
+        if (detailVenue == null) return exploreVenues();
+        Venue v = detailVenue;
+        StackPane photo = venueDetailPhoto(v);
+        Label eyebrow = new Label("VENUE COLLECTION  /  "
+                + CustomerText.words(VenueCatalog.categoryOf(v)).toUpperCase(java.util.Locale.ROOT));
+        eyebrow.getStyleClass().add("venue-category");
+        VBox left = new VBox(14, photo, eyebrow, title(v.name()),
+                body("Supported events  •  " + supportedEvents(v)),
+                body("Guest capacity  •  " + (v.capacity() == Integer.MAX_VALUE ? "Not specified" : v.capacity() + " guests")),
+                body("Venue description, facilities, and operating hours have not been provided in the catalog."));
+        left.getStyleClass().add("venue-detail-left");
+
+        Button reserve = primary("Reserve This Venue", () -> venueRequest.accept(v));
+        reserve.setId("venue-detail-reserve");
+        reserve.setMaxWidth(Double.MAX_VALUE);
+        String googleMapsUrl = googleMapsSearchUrl(v);
+        Hyperlink mapsLink = new Hyperlink("Open Google Maps");
+        mapsLink.setOnAction(event -> openExternalLink(googleMapsUrl));
+        Label demoStars = new Label("★★★★★  4.6 / 5  ·  Demo preview");
+        demoStars.getStyleClass().add("demo-rating-stars");
+        VBox ratingBlock = new VBox(5, demoStars,
+                body("Fictional preview only. This is not a Google rating or venue customer data."), mapsLink);
+        ratingBlock.getStyleClass().add("google-rating-block");
+        VBox rates = new VBox(8, sectionHeading("Reservation rates"),
+                body("Hourly  •  PHP " + money(v.hourlyRate()) + " per hour (06:00–23:00)"),
+                body("Morning half-day  •  PHP " + money(v.morningRate()) + " (06:00–12:00)"),
+                body("Afternoon half-day  •  PHP " + money(v.afternoonRate()) + " (12:00–18:00)"));
+        VBox booking = new VBox(9, reserve,
+                body("Full wallet payment is required. The reservation remains pending until an administrator reviews it."));
+        booking.getStyleClass().add("venue-detail-booking");
+        Hyperlink reviewsLink = new Hyperlink("View reviews on Google Maps");
+        reviewsLink.setOnAction(event -> openExternalLink(googleMapsUrl));
+        VBox reviewCards = new VBox(10);
+        for (DemoReview review : DEMO_REVIEWS) reviewCards.getChildren().add(demoReviewCard(review));
+        VBox reviews = new VBox(10, sectionHeading("Customer Reviews"),
+                body("Fictional demo reviews for layout preview. They are not from Google and are not reviews of this venue."),
+                reviewCards, reviewsLink);
+        reviews.getStyleClass().add("venue-reviews");
+        VBox right = new VBox(20, sectionHeading("A setting for your next gathering"), ratingBlock, rates, booking, reviews);
+        right.getStyleClass().add("venue-detail-right");
+        left.setMinWidth(0); right.setMinWidth(0);
+        left.setMaxWidth(Double.MAX_VALUE); right.setMaxWidth(Double.MAX_VALUE);
+        FlowPane layout = new FlowPane(24, 20, left, right);
+        layout.getStyleClass().add("venue-detail-layout");
+        layout.setMaxWidth(Double.MAX_VALUE);
+        VBox breadcrumb = new VBox(new HBox(8, BackNavigation.button(backNavigation),
+                Ui.muted("Explore Venues  ›  Venue Details")));
+        VBox content = new VBox(16, breadcrumb, layout);
+        content.getStyleClass().add("venue-detail-page");
+        layout.prefWidthProperty().bind(content.widthProperty());
+        layout.widthProperty().addListener((o, oldWidth, width) -> resizeDetailColumns(layout, left, right));
+        resizeDetailColumns(layout, left, right);
+        return pageFrame("Venue Details", content);
+    }
+
+    private static void resizeDetailColumns(FlowPane layout, VBox left, VBox right) {
+        double width = layout.getWidth();
+        if (width <= 0) return;
+        double columnWidth = width < 760 ? width : (width - layout.getHgap()) / 2;
+        left.setPrefWidth(columnWidth);
+        right.setPrefWidth(columnWidth);
+    }
+
+    private static VBox demoReviewCard(DemoReview review) {
+        Label stars = new Label("★".repeat(review.rating()) + "☆".repeat(5 - review.rating()));
+        stars.getStyleClass().add("demo-review-stars");
+        Label author = new Label(review.author() + "  ·  Sample reviewer");
+        author.getStyleClass().add("demo-review-author");
+        VBox card = new VBox(7, stars, author, body(review.text()), body("Illustrative sample · no real posting date"));
+        card.getStyleClass().add("demo-review-card");
+        return card;
+    }
+
+    private static StackPane venueDetailPhoto(Venue venue) {
+        Label placeholder = new Label(CustomerText.words(VenueCatalog.categoryOf(venue)).toUpperCase(java.util.Locale.ROOT));
+        placeholder.getStyleClass().add("venue-placeholder-label");
+        StackPane frame = new StackPane(placeholder);
+        frame.setAlignment(Pos.CENTER);
+        frame.getStyleClass().addAll("venue-image", "venue-detail-image");
+        frame.setMinHeight(240);
+        frame.prefHeightProperty().bind(frame.widthProperty().multiply(0.72));
+
+        String slug = venue.name().toLowerCase(java.util.Locale.ROOT).replaceAll("[^a-z0-9]+", "-").replaceAll("(^-|-$)", "");
+        java.net.URL asset = CustomerMenuPages.class.getResource("/drawn/gui/images/venues/" + slug + ".jpg");
+        if (asset == null) asset = CustomerMenuPages.class.getResource("/drawn/gui/images/venues/" + slug + ".png");
+        if (asset != null) {
+            Image image = new Image(asset.toExternalForm(), true);
+            ImageView photo = new ImageView(image);
+            photo.setPreserveRatio(true);
+            photo.setSmooth(true);
+            photo.fitWidthProperty().bind(frame.widthProperty());
+            photo.fitHeightProperty().bind(frame.heightProperty());
+            image.progressProperty().addListener((o, previousProgress, progress) -> {
+                if (progress.doubleValue() >= 1 && !image.isError()) {
+                    frame.getChildren().add(0, photo);
+                    placeholder.setVisible(false);
+                }
+            });
+            if (image.getProgress() >= 1 && !image.isError()) {
+                frame.getChildren().add(0, photo);
+                placeholder.setVisible(false);
+            }
+        }
+        Rectangle clip = new Rectangle();
+        clip.widthProperty().bind(frame.widthProperty());
+        clip.heightProperty().bind(frame.heightProperty());
+        clip.setArcWidth(18); clip.setArcHeight(18);
+        frame.setClip(clip);
+        return frame;
+    }
+
+    private static String googleMapsSearchUrl(Venue venue) {
+        String query = URLEncoder.encode(venue.name() + ", Iloilo, Philippines", StandardCharsets.UTF_8);
+        return "https://www.google.com/maps/search/?api=1&query=" + query;
+    }
+
+    private record DemoReview(String author, int rating, String text) { }
+
+    private static void openExternalLink(String url) {
+        try { java.awt.Desktop.getDesktop().browse(java.net.URI.create(url)); }
+        catch (Exception ex) { Ui.error("Could not open Google Maps", "Open this link in your browser: " + url); }
+    }
+
+    private static VBox venuePlaceholder(Venue venue, String style) {
+        Label mark = new Label(CustomerText.words(VenueCatalog.categoryOf(venue)).toUpperCase(java.util.Locale.ROOT));
+        mark.getStyleClass().add("venue-placeholder-label");
+        VBox image = new VBox(mark);
+        image.setAlignment(Pos.CENTER);
+        image.getStyleClass().addAll("venue-image", style);
+        return image;
+    }
+
+    private static String supportedEvents(Venue venue) {
+        return venue.type() == VenueType.BOTH ? "Social gatherings  •  Ticketed events"
                 : venue.type() == VenueType.COMMERCIAL ? "Ticketed events" : "Social gatherings";
-        VBox details = new VBox(10, title(venue.name()),
-                body("Category: " + CustomerText.words(VenueCatalog.categoryOf(venue))),
-                body("Eligible events: " + eligibility),
-                body("Maximum capacity: " + (venue.capacity() == Integer.MAX_VALUE ? "Not specified" : venue.capacity() + " guests")),
-                body("Hourly rate: PHP " + money(venue.hourlyRate())),
-                body("Half-day morning rate: PHP " + money(venue.morningRate())),
-                body("Half-day afternoon rate: PHP " + money(venue.afternoonRate())));
-        dialog.getDialogPane().setContent(details);
-        styleDialog(dialog);
-        Button reserve = (Button) dialog.getDialogPane().lookupButton(dialog.getDialogPane().getButtonTypes().get(0));
-        reserve.addEventFilter(ActionEvent.ACTION, event -> {
-            event.consume();
-            dialog.close();
-            requestVenue(venue);
-        });
-        dialog.showAndWait();
+    }
+
+    private static Label sectionHeading(String text) {
+        Label label = new Label(text); label.getStyleClass().add("editorial-section"); return label;
+    }
+
+    private static void resizeVenueCards(FlowPane cards) {
+        double width = cards.getWidth();
+        if (width <= 0) return;
+        int columns = width >= 900 ? 3 : width >= 600 ? 2 : 1;
+        double cardWidth = Math.max(220, (width - (columns - 1) * cards.getHgap()) / columns - 8);
+        cards.getChildren().stream().filter(VBox.class::isInstance).map(VBox.class::cast)
+                .forEach(card -> card.setPrefWidth(cardWidth));
+    }
+
+    private static StartingRate startingRate(Venue venue) {
+        return List.of(new StartingRate(venue.hourlyRate(), "per hour"),
+                        new StartingRate(venue.morningRate(), "morning half-day"),
+                        new StartingRate(venue.afternoonRate(), "afternoon half-day"))
+                .stream().min(java.util.Comparator.comparing(StartingRate::amount)).orElseThrow();
+    }
+
+    private record StartingRate(BigDecimal amount, String basis) {
+        String label() { return "PHP " + money(amount) + " (" + basis + ")"; }
     }
 
     private Node myEvents() throws IOException {
@@ -203,42 +444,80 @@ final class CustomerMenuPages {
     }
 
     private Node tickets() throws IOException {
-        List<TicketRepository.Purchase> purchases = services.publishing().purchases(session.customer());
-        VBox content = new VBox(14, title("My Tickets"), body("Your purchases and their current status."));
+        List<TicketRepository.Purchase> purchases = services.publishing().purchases(session.customer()).stream()
+                .sorted(java.util.Comparator.comparing(TicketRepository.Purchase::timestamp).reversed()).toList();
+        TableView<TicketRepository.Purchase> ledger = Ui.table(purchases, "No tickets in your ledger yet.");
+        ledger.setId("tickets-table");
+        Ui.column(ledger, "Event", this::eventName);
+        Ui.column(ledger, "Ticket", this::categoryName);
+        Ui.column(ledger, "Qty", purchase -> String.valueOf(purchase.quantity()));
+        Ui.column(ledger, "Amount", purchase -> Ui.php(purchase.amount()));
+        Ui.column(ledger, "Status", purchase -> CustomerText.words(purchase.status()));
+        ledger.setPrefHeight(540);
+        ledger.setMinWidth(420);
+
+        VBox detail = Ui.card(Ui.muted("Select a ticket entry to see its details."));
+        detail.setMinWidth(330);
+        detail.setPrefWidth(390);
         if (purchases.isEmpty()) {
-            VBox bubble = new VBox(12, title("No tickets yet"), body("Explore events and find tickets for your next experience."),
+            VBox prompt = new VBox(12, title("Your ticket ledger is empty"),
+                    body("Explore events and find tickets for your next experience."),
                     primary("Explore Events", () -> navigate.accept("Explore Events")));
-            bubble.setAlignment(Pos.CENTER);
-            bubble.setMaxWidth(440);
-            bubble.getStyleClass().add("empty-state-bubble");
-            StackPane centered = new StackPane(bubble);
-            centered.setMinHeight(420);
-            centered.setPrefHeight(420);
-            content.getChildren().add(centered);
+            prompt.setAlignment(Pos.CENTER);
+            prompt.getStyleClass().add("empty-state-bubble");
+            detail.getChildren().setAll(new StackPane(prompt));
         }
-        for (TicketRepository.Purchase p : purchases) {
-            Event event = services.publishing().event(p.eventId());
-            TicketType type = services.publishing().ticketTypes(p.eventId()).stream()
-                    .filter(t -> t.id().equals(p.ticketTypeId())).findFirst().orElse(null);
-            VBox card = dataCard();
-            card.getChildren().addAll(title(event.name()), body((type == null ? "Ticket" : type.name()) + " × " + p.quantity()),
-                    body("Paid: PHP " + money(p.amount()) + " • Purchased: " + p.timestamp()), body("Status: " + CustomerText.words(p.status())),
-                    body(event.date() + " • " + CustomerText.time(event.startTime()) + "–" + CustomerText.time(event.endTime()) + " • " + event.venue().name()));
-            if (p.status() == drawn.model.ticket.TicketPurchaseStatus.ACTIVE) card.getChildren().add(secondary("Cancel Tickets", () -> cancelTickets(p)));
-            content.getChildren().add(card);
-        }
-        return pageFrame("My Tickets", content);
+        ledger.getSelectionModel().selectedItemProperty().addListener((observable, previous, selected) -> {
+            if (selected == null) return;
+            try {
+                Event event = services.publishing().event(selected.eventId());
+                TicketType type = services.publishing().ticketTypes(selected.eventId()).stream()
+                        .filter(candidate -> candidate.id().equals(selected.ticketTypeId())).findFirst().orElse(null);
+                detail.getChildren().setAll(Ui.section(event.name()), Ui.details(
+                        "Ticket", type == null ? "Ticket" : type.name(),
+                        "Quantity", String.valueOf(selected.quantity()),
+                        "Paid", Ui.php(selected.amount()),
+                        "Purchased", selected.timestamp().toString(),
+                        "Status", CustomerText.words(selected.status()),
+                        "Date", String.valueOf(event.date()),
+                        "Time", CustomerText.time(event.startTime()) + "–" + CustomerText.time(event.endTime()),
+                        "Venue", event.venue().name()));
+                if (selected.status() == drawn.model.ticket.TicketPurchaseStatus.ACTIVE)
+                    detail.getChildren().add(danger("Cancel Tickets", () -> cancelTickets(selected)));
+            } catch (Exception ex) {
+                detail.getChildren().setAll(body("Ticket details could not be loaded: " + message(ex)));
+            }
+        });
+        if (!purchases.isEmpty()) ledger.getSelectionModel().selectFirst();
+        HBox book = new HBox(18, ledger, detail);
+        HBox.setHgrow(ledger, Priority.ALWAYS);
+        return Ui.page("My Tickets", "Your ticket purchases and their current status.", book);
+    }
+
+    private String eventName(TicketRepository.Purchase purchase) {
+        try { return services.publishing().event(purchase.eventId()).name(); }
+        catch (Exception ex) { return "Event record unavailable"; }
+    }
+
+    private String categoryName(TicketRepository.Purchase purchase) {
+        try { return services.workflow().ticketCategoryName(purchase); }
+        catch (Exception ex) { return "Ticket"; }
     }
 
     private Node profile() {
         var customer = session.customer();
-        VBox content = new VBox(14, title("My Profile"), body("Your customer account details."));
-        VBox card = dataCard();
-        card.getChildren().addAll(title(customer.getName()), body("Account: " + customer.getId()),
-                body("Email: " + nullText(customer.getEmail())), body("Phone: " + nullText(customer.getPhoneNumber())),
-                body("Date of birth: " + nullText(customer.getDateOfBirth())),
-                body("Contact preference: " + CustomerText.words(customer.getContactMethod())));
-        content.getChildren().add(card);
+        Label initials = new Label(profileInitials(customer.getName()));
+        initials.getStyleClass().add("profile-avatar");
+        VBox identity = new VBox(4, title(customer.getName()), body("Customer account"));
+        HBox header = new HBox(16, initials, identity);
+        header.setAlignment(Pos.CENTER_LEFT);
+        VBox card = new VBox(20, header, Ui.details("Account ID", customer.getId(),
+                "Email", nullText(customer.getEmail()),
+                "Phone", nullText(customer.getPhoneNumber()),
+                "Date of birth", nullText(customer.getDateOfBirth()),
+                "Contact preference", CustomerText.words(customer.getContactMethod())));
+        card.getStyleClass().add("profile-card");
+        VBox content = new VBox(14, title("My Profile"), body("Your customer account details."), card);
         return pageFrame("My Profile", content);
     }
 
@@ -253,15 +532,20 @@ final class CustomerMenuPages {
             } catch (IOException ex) { card.getChildren().add(body("Ticket details unavailable: " + message(ex))); }
         }
         Button details = secondary("View Details", () -> new EventDetailsView(event, services, session, () -> navigate.accept("Explore Events")).show());
-        card.getChildren().add(details);
+        HBox actions = new HBox(8, details);
+        if (owned) {
+            actions.getChildren().addAll(secondary("Edit Event", () -> new EditEventDialog(services, session, event,
+                            () -> navigate.accept("Explore Events")).show()),
+                    danger("Cancel Event", () -> cancelEvent(event)));
+        }
+        card.getChildren().add(actions);
         return card;
     }
 
     private void requestVenue(Venue selectedVenue) {
         Dialog<ButtonType> dialog = new Dialog<>(); dialog.setTitle("Request a venue");
         ButtonType submit = new ButtonType("Review and Pay", ButtonBar.ButtonData.OK_DONE);
-        ButtonType back = new ButtonType("Back to Venues", ButtonBar.ButtonData.BACK_PREVIOUS);
-        dialog.getDialogPane().getButtonTypes().addAll(submit, back, ButtonType.CANCEL);
+        dialog.getDialogPane().getButtonTypes().addAll(submit, ButtonType.CANCEL);
         ComboBox<EventPurpose> purpose = new ComboBox<>();
         purpose.getItems().setAll(java.util.Arrays.stream(EventPurpose.values()).filter(selectedVenue::supports).toList());
         purpose.setConverter(converter(CustomerText::words)); purpose.getSelectionModel().selectFirst();
@@ -307,12 +591,10 @@ final class CustomerMenuPages {
         start.onChange(quote); end.onChange(quote);
         pricing.valueProperty().addListener((o,a,b)->{updateTimeRows.run();quote.run();});
         updateTimeRows.run(); quote.run();
-        dialog.getDialogPane().setContent(fields); styleDialog(dialog);
-        dialog.getDialogPane().lookupButton(back).addEventFilter(ActionEvent.ACTION, event -> {
-            event.consume();
-            dialog.close();
-            navigate.accept("Explore Venues");
-        });
+        VBox formContent = new VBox(12, new HBox(8,
+                BackNavigation.button(() -> { dialog.close(); navigate.accept("Explore Venues"); }),
+                body("Explore Venues  ›  Request a Venue")), fields);
+        dialog.getDialogPane().setContent(formContent); styleDialog(dialog);
         dialog.getDialogPane().lookupButton(submit).addEventFilter(ActionEvent.ACTION, action -> {
             action.consume();
             try {
@@ -348,7 +630,9 @@ final class CustomerMenuPages {
         purpose.valueProperty().addListener((o,a,b)->{boolean ticketed=b==EventPurpose.TICKETED_EVENT;ticketRows.setVisible(ticketed);ticketRows.setManaged(ticketed);});
         visibility.valueProperty().addListener((o,a,b)->{boolean priv=b==EventVisibility.PRIVATE;keyword.setVisible(priv);keyword.setManaged(priv);});keyword.setVisible(false);keyword.setManaged(false);
         Label reserved=new Label();reserved.getStyleClass().add("secondary-text");Runnable updateReservation=()->{VenueReservation r=reservation.getValue();if(r==null)return;reserved.setText("Reserved: "+CustomerText.reservationSchedule(r));Venue v=venueFor(r);((SpinnerValueFactory.IntegerSpinnerValueFactory)attendance.getValueFactory()).setMax(v.capacity());};reservation.valueProperty().addListener((o,a,b)->updateReservation.run());updateReservation.run();
-        Label error=AuthenticationFormSupport.errorLabel();VBox form=new VBox(10,label("Approved reservation"),reservation,reserved,
+        Label error=AuthenticationFormSupport.errorLabel();VBox form=new VBox(10,
+                new HBox(8, BackNavigation.button(() -> { dialog.close(); navigate.accept("My Events"); }), body("My Events  ›  Create Event")),
+                label("Approved reservation"),reservation,reserved,
                 row("Event name",name),row("Description",description),row("Event type",type),row("Purpose",purpose),row("Visibility",visibility),keyword,
                 row("Expected attendance",attendance),ticketRows,addCategory,error);form.setPadding(new Insets(12));
         ScrollPane scroller=new ScrollPane(form);scroller.setFitToWidth(true);scroller.setPrefViewportHeight(540);scroller.getStyleClass().add("content-scroll");dialog.getDialogPane().setContent(scroller);styleDialog(dialog);
@@ -413,6 +697,7 @@ final class CustomerMenuPages {
     private static Label body(String text){Label l=new Label(text==null?"—":text);l.getStyleClass().add("secondary-text");l.setWrapText(true);return l;}
     private static Button primary(String text,Runnable action){Button b=new Button(text);b.getStyleClass().add("primary-button");b.setOnAction(e->action.run());return b;}
     private static Button secondary(String text,Runnable action){Button b=new Button(text);b.getStyleClass().add("secondary-button");b.setOnAction(e->action.run());return b;}
+    private static Button danger(String text,Runnable action){Button b=new Button(text);b.getStyleClass().add("danger-button");b.setOnAction(e->action.run());return b;}
     private static boolean confirm(String text){Alert a=new Alert(Alert.AlertType.CONFIRMATION,text,ButtonType.OK,ButtonType.CANCEL);a.setHeaderText("Please confirm");styleDialog(a);return a.showAndWait().orElse(ButtonType.CANCEL)==ButtonType.OK;}
     private static void info(String text){Alert a=new Alert(Alert.AlertType.INFORMATION,text);a.setHeaderText(null);styleDialog(a);a.showAndWait();}
     private static void error(String text){Alert a=new Alert(Alert.AlertType.ERROR,text);a.setHeaderText(null);styleDialog(a);a.showAndWait();}
@@ -473,6 +758,12 @@ final class CustomerMenuPages {
         }
     }
     private static String money(BigDecimal n){return n.setScale(2,java.math.RoundingMode.HALF_UP).toPlainString();}
+    private static String profileInitials(String name) {
+        if (name == null || name.isBlank()) return "?";
+        String[] parts = name.trim().split("\\s+");
+        return (parts[0].substring(0, 1) + (parts.length > 1 ? parts[parts.length - 1].substring(0, 1) : ""))
+                .toUpperCase(java.util.Locale.ROOT);
+    }
     private static String nullText(Object value){return value==null?"Not provided":value.toString();}
     private static String message(Exception e){return e.getMessage()==null?e.getClass().getSimpleName():e.getMessage();}
 }

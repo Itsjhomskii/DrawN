@@ -36,6 +36,15 @@ public final class PrivateEventAccessRepository {
         return false;
     }
 
+    public synchronized String keywordFor(String eventId) throws IOException {
+        for (String row : read()) {
+            if (row.equals(HEADER) || row.isBlank()) continue;
+            String[] fields = row.split(",", 2);
+            if (fields.length == 2 && fields[0].equals(eventId)) return fields[1];
+        }
+        return "";
+    }
+
     public synchronized void delete(String eventId) throws IOException {
         List<String> rows = read();
         if (rows.isEmpty()) return;

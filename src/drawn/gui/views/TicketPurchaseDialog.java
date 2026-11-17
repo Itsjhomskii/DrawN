@@ -15,6 +15,8 @@ import javafx.scene.control.Label;
 import javafx.scene.control.Spinner;
 import javafx.scene.control.SpinnerValueFactory;
 import javafx.scene.layout.GridPane;
+import javafx.scene.layout.HBox;
+import javafx.scene.layout.VBox;
 import javafx.util.StringConverter;
 
 import java.io.IOException;
@@ -79,7 +81,8 @@ final class TicketPurchaseDialog {
             ButtonType checkout = new ButtonType("Review purchase", ButtonBar.ButtonData.OK_DONE);
             Dialog<ButtonType> dialog = new Dialog<>(); dialog.setTitle("Buy tickets • " + event.name());
             dialog.getDialogPane().getButtonTypes().addAll(checkout, ButtonType.CANCEL);
-            dialog.getDialogPane().setContent(fields);
+            dialog.getDialogPane().setContent(new VBox(10,
+                    new HBox(8, BackNavigation.button(dialog::close), Ui.muted("Event Details  ›  Buy Tickets")), fields));
             dialog.getDialogPane().getStylesheets().add(getClass().getResource("/drawn/gui/styles/theme.css").toExternalForm());
             dialog.getDialogPane().getStyleClass().add("customer-dialog");
             dialog.getDialogPane().lookupButton(checkout).addEventFilter(ActionEvent.ACTION, action -> {

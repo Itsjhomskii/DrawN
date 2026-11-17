@@ -42,6 +42,8 @@ public final class PaymentService {
         if (r.status() != BookingStatus.PENDING && r.status() != BookingStatus.APPROVED)
             throw new IllegalArgumentException("Only pending or approved reservations can be paid.");
         if (r.paymentStatus() != PaymentStatus.UNPAID) throw new IllegalArgumentException("Reservation is not unpaid.");
+        new drawn.service.event.ReservationService(events, reservations)
+                .ensureScheduleAvailable(r.venueName(), r.date(), r.startTime(), r.endTime(), r.id());
         String operation = "venuepay:" + r.id();
         List<String> payload = List.of(customer.getId(), r.id(), r.cost().toPlainString(), "venue-payment:" + r.id());
         journal.begin(operation, "VENUE_PAYMENT", payload);
@@ -62,6 +64,8 @@ public final class PaymentService {
             throw new IllegalArgumentException("Reservation does not belong to this customer.");
         if (current.status() != BookingStatus.PENDING || !current.eventId().isBlank())
             throw new IllegalArgumentException("Only unapproved reservations without a linked event can be edited.");
+        new drawn.service.event.ReservationService(events, reservations)
+                .ensureScheduleAvailable(venue.name(), date, start, end, current.id());
         if (current.paymentStatus() != PaymentStatus.PAID)
             throw new IllegalArgumentException("Only paid reservations can be edited.");
         if (!current.venueName().equals(venue.name()))

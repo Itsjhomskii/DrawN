@@ -8,6 +8,7 @@ import drawn.service.event.EventCancellationService;
 import drawn.service.event.EventPublishingService;
 import drawn.service.event.EventService;
 import drawn.service.event.ReservationService;
+import drawn.service.event.VenueExtensionService;
 import drawn.service.payment.CommissionPolicy;
 import drawn.service.payment.OrganizerEarningsService;
 import drawn.service.payment.PaymentService;
@@ -18,6 +19,7 @@ import drawn.storage.PrivateEventAccessRepository;
 import drawn.storage.ReservationRepository;
 import drawn.storage.TicketRepository;
 import drawn.storage.TransactionJournal;
+import drawn.storage.VenueExtensionRepository;
 
 import java.io.IOException;
 import java.nio.file.Path;
@@ -37,6 +39,7 @@ public final class AppServices {
     private final drawn.service.customer.CustomerVenueWorkflowService venueWorkflow;
     private final drawn.service.customer.CustomerEventCreationService eventCreation;
     private final AdminDashboardService adminDashboard;
+    private final VenueExtensionService venueExtensions;
     private final PrivateEventAccessRepository privateAccess;
 
     public AppServices(Path dataDirectory) {
@@ -46,6 +49,7 @@ public final class AppServices {
         PaymentRepository paymentRepository = new PaymentRepository(dataDirectory);
         TicketRepository ticketRepository = new TicketRepository(dataDirectory);
         TransactionJournal journal = new TransactionJournal(dataDirectory);
+        VenueExtensionRepository extensionRepository = new VenueExtensionRepository(dataDirectory);
         privateAccess = new PrivateEventAccessRepository(dataDirectory);
         customerAccess = new CustomerAccessService(accounts);
         earnings = new OrganizerEarningsService(eventRepository, ticketRepository, paymentRepository, CommissionPolicy.configured());
@@ -53,11 +57,13 @@ public final class AppServices {
         payment = new PaymentService(accounts, reservationRepository, paymentRepository, journal, eventRepository);
         reservations = new ReservationService(eventRepository, reservationRepository, Clock.systemDefaultZone(), payment);
         publishing = new EventPublishingService(eventRepository, reservationRepository, ticketRepository, paymentRepository, accounts, journal);
-        cancellation = new EventCancellationService(eventRepository, reservationRepository, ticketRepository, paymentRepository, accounts, journal);
+        cancellation = new EventCancellationService(eventRepository, reservationRepository, ticketRepository, paymentRepository,
+                accounts, journal, Clock.systemDefaultZone(), extensionRepository);
         workflow = new CustomerWorkflowService(accounts, eventRepository, reservationRepository, ticketRepository,
                 privateAccess, reservations, payment, events, publishing);
         venueWorkflow = new drawn.service.customer.CustomerVenueWorkflowService(accounts, reservationRepository, reservations, payment);
         eventCreation = new drawn.service.customer.CustomerEventCreationService(events, publishing, privateAccess);
+        venueExtensions = new VenueExtensionService(events, reservations, extensionRepository, Clock.systemDefaultZone());
         adminDashboard = new AdminDashboardService(reservations, eventRepository, ticketRepository, paymentRepository,
                 accounts, journal, CommissionPolicy.configured(), new AdminAuditLog(dataDirectory, Clock.systemDefaultZone()));
     }
@@ -80,6 +86,7 @@ public final class AppServices {
     public drawn.service.customer.CustomerVenueWorkflowService venueWorkflow() { return venueWorkflow; }
     public drawn.service.customer.CustomerEventCreationService eventCreationService() { return eventCreation; }
     public AdminDashboardService adminDashboard() { return adminDashboard; }
+    public VenueExtensionService venueExtensions() { return venueExtensions; }
 
     // Compatibility accessors used by the customer GUI restored from commit 6605d3b.
     public EventService eventService() { return events; }

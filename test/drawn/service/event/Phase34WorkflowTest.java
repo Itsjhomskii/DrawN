@@ -12,6 +12,7 @@ import drawn.model.event.Venue;
 import drawn.model.event.VenueCatalog;
 import drawn.model.event.VenueType;
 import drawn.model.event.VenueReservation;
+import drawn.model.event.VenueExtensionRequest;
 import drawn.model.payment.PaymentPurpose;
 import drawn.model.payment.PaymentStatus;
 import drawn.model.ticket.TicketType;
@@ -23,7 +24,9 @@ import drawn.storage.PaymentRepository;
 import drawn.storage.ReservationRepository;
 import drawn.storage.TicketRepository;
 import drawn.storage.TransactionJournal;
+import drawn.storage.VenueExtensionRepository;
 import drawn.service.payment.PaymentService;
+import drawn.service.event.VenueExtensionService;
 import java.math.BigDecimal;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -71,6 +74,16 @@ public final class Phase34WorkflowTest {
             assert paidPending.status()==BookingStatus.PENDING&&paidPending.paymentStatus()==PaymentStatus.PAID;
             VenueReservation confirmed=reservationService.approve(pending.id());
             assert confirmed.status()==BookingStatus.APPROVED&&confirmed.paymentStatus()==PaymentStatus.PAID;
+            VenueReservation exactGap=reservationService.request(owner,VenueCatalog.all().get(5),EVENT_DATE,
+                    LocalTime.of(13,0),LocalTime.of(14,0),ReservationPricing.HOURLY);
+            assert exactGap.status()==BookingStatus.PENDING;
+            reservationService.decline(exactGap.id(),"Schedule boundary check complete");
+            expectIllegal(()->reservationService.request(owner,VenueCatalog.all().get(5),EVENT_DATE,
+                    LocalTime.of(12,59),LocalTime.of(13,59),ReservationPricing.HOURLY));
+            VenueReservation otherVenueOverlap=reservationService.request(owner,VenueCatalog.all().get(4),EVENT_DATE,
+                    LocalTime.of(9,0),LocalTime.of(11,0),ReservationPricing.HOURLY);
+            assert otherVenueOverlap.status()==BookingStatus.PENDING;
+            reservationService.decline(otherVenueOverlap.id(),"Other venue overlap check complete");
             assert eventService.submitDraft(owner,event.id()).approvalStatus()==drawn.model.event.EventApprovalStatus.PENDING;
             Event birthday=new Event("birthday",owner.getId(),"Birthday","Private gathering",EventType.BIRTHDAY,
                     drawn.model.event.EventPurpose.SOCIAL_GATHERING,drawn.model.event.EventVisibility.PRIVATE,EVENT_DATE,
@@ -113,19 +126,31 @@ public final class Phase34WorkflowTest {
             assert buyerAccount.getWalletBalance().compareTo(new BigDecimal("99950.00"))==0;
             expectIllegal(()->publishing.buyTicket(buyer,buyerAccount,event.id(),general.id(),39));
 
+            VenueExtensionRepository extensionRepo=new VenueExtensionRepository(dir);
+            VenueExtensionService extensionService=new VenueExtensionService(eventService,reservationService,extensionRepo,clock);
+            BigDecimal balanceBeforeExtension=ownerAccount.getWalletBalance();
+            VenueExtensionRequest extension=extensionService.request(owner,event.id(),LocalTime.of(11,30));
+            BigDecimal expectedExtensionFee=event.venue().hourlyRate().divide(new BigDecimal("2"),2,java.math.RoundingMode.HALF_UP);
+            assert extension.additionalCost().compareTo(expectedExtensionFee)==0;
+            assert extension.status()==drawn.model.event.ExtensionRequestStatus.PENDING;
+            assert ownerAccount.getWalletBalance().compareTo(balanceBeforeExtension)==0;
+            assert eventService.eventsFor(owner).stream().filter(e->e.id().equals(event.id())).findFirst().orElseThrow().endTime()
+                    .equals(LocalTime.of(11,0));
+            assert new VenueExtensionRepository(dir).forEvent(event.id()).size()==1;
+
             Event conflicting=eventService.saveDraft(owner,draft("Conflict",EVENT_DATE,LocalTime.of(10,0),
                     LocalTime.of(12,0),20,event.venue(),"Another event"));
-            VenueReservation conflict=reservationService.request(owner,conflicting,ReservationPricing.HOURLY);
-            paymentService.payVenue(owner,ownerAccount,conflict.id());
-            expectIllegal(()->reservationService.approve(conflict.id()));
-            VenueReservation declinedConflict=reservationService.decline(conflict.id(),"Venue time conflicts with an approved booking");
-            assert declinedConflict.status()==BookingStatus.DECLINED&&declinedConflict.paymentStatus()==PaymentStatus.REFUNDED;
+            expectIllegal(()->reservationService.request(owner,conflicting,ReservationPricing.HOURLY));
 
-            Event rejected=eventService.saveDraft(owner,draft("Rejected event",EVENT_DATE,LocalTime.of(12,0),
-                    LocalTime.of(13,0),10,VenueCatalog.all().get(5),"Rejected details"));
+            Event rejected=eventService.saveDraft(owner,draft("Rejected event",EVENT_DATE,LocalTime.of(13,0),
+                    LocalTime.of(14,0),10,VenueCatalog.all().get(5),"Rejected details"));
             VenueReservation rejectedReservation=reservationService.request(owner,rejected,ReservationPricing.HOURLY);
             paymentService.payVenue(owner,ownerAccount,rejectedReservation.id());
             reservationService.approve(rejectedReservation.id());
+            extensionRepo.update(new VenueExtensionRequest(extension.id(),extension.reservationId(),extension.eventId(),
+                    extension.organizerId(),extension.requestedEndTime(),extension.additionalCost(),extension.requestedAt(),
+                    drawn.model.event.ExtensionRequestStatus.CANCELLED,"Test approved schedule change"));
+            expectIllegal(()->extensionService.request(owner,event.id(),LocalTime.of(11,30)));
             eventService.submitDraft(owner,rejected.id());
             eventService.review(rejected.id(),false);
             expectIllegal(()->publishing.publish(owner,rejected.id()));
@@ -136,7 +161,7 @@ public final class Phase34WorkflowTest {
             assert balanceAfterDecline.compareTo(new BigDecimal("100000.00").subtract(rejectedReservation.cost()))==0 : balanceAfterDecline;
             assert paymentService.history(owner).stream().anyMatch(tx->tx.status()==PaymentStatus.REFUNDED);
             assert publishing.publishedEvents().size()==1;
-            expectIllegal(()->reservationService.decline(conflict.id()," "));
+            expectIllegal(()->reservationService.decline(pending.id()," "));
 
             EventRepository reloadEvents=new EventRepository(dir);
             assert reloadEvents.findByOrganizer(owner.getId()).size()==4;
@@ -144,7 +169,7 @@ public final class Phase34WorkflowTest {
             assert new TicketRepository(dir).types(event.id()).get(0).sold()==2;
 
             VenueReservation independent=reservationService.request(owner,VenueCatalog.all().get(5),EVENT_DATE,
-                    LocalTime.of(14,0),LocalTime.of(16,0),ReservationPricing.HOURLY);
+                    LocalTime.of(16,0),LocalTime.of(18,0),ReservationPricing.HOURLY);
             assert independent.eventId().isBlank();
             VenueReservation independentPaid=paymentService.payVenue(owner,ownerAccount,independent.id());
             assert independentPaid.paymentStatus()==PaymentStatus.PAID;
@@ -167,6 +192,30 @@ public final class Phase34WorkflowTest {
             Event complete=eventService.createPublishedForApprovedReservation(owner,completeDraft,creationReservation.id());
             assert complete.approvalStatus()==drawn.model.event.EventApprovalStatus.PUBLISHED;
             assert reservationRepo.findById(creationReservation.id()).eventId().equals(complete.id());
+
+            LocalDate raceDate=EVENT_DATE.plusDays(7);
+            Venue venue=VenueCatalog.all().get(5);
+            VenueReservation paymentCandidate=reservationService.request(owner,venue,raceDate,LocalTime.of(9,0),
+                    LocalTime.of(10,0),ReservationPricing.HOURLY);
+            VenueReservation paymentBlocker=blockingReservation("payment-race",owner,venue,raceDate,
+                    LocalTime.of(10,30),LocalTime.of(11,30));
+            reservationRepo.save(paymentBlocker);
+            BigDecimal beforeBlockedPayment=ownerAccount.getWalletBalance();
+            expectIllegal(()->paymentService.payVenue(owner,ownerAccount,paymentCandidate.id()));
+            assert ownerAccount.getWalletBalance().compareTo(beforeBlockedPayment)==0;
+            reservationRepo.delete(paymentBlocker.id());
+            reservationService.decline(paymentCandidate.id(),"Payment schedule race check complete");
+
+            LocalDate approvalDate=EVENT_DATE.plusDays(8);
+            VenueReservation approvalCandidate=reservationService.request(owner,venue,approvalDate,LocalTime.of(9,0),
+                    LocalTime.of(10,0),ReservationPricing.HOURLY);
+            paymentService.payVenue(owner,ownerAccount,approvalCandidate.id());
+            VenueReservation approvalBlocker=blockingReservation("approval-race",owner,venue,approvalDate,
+                    LocalTime.of(10,30),LocalTime.of(11,30));
+            reservationRepo.save(approvalBlocker);
+            expectIllegal(()->reservationService.approve(approvalCandidate.id()));
+            reservationRepo.delete(approvalBlocker.id());
+            reservationService.decline(approvalCandidate.id(),"Approval schedule race check complete");
         } finally {
             try(var paths=Files.walk(dir)){paths.sorted(java.util.Comparator.reverseOrder()).forEach(p->{try{Files.deleteIfExists(p);}catch(Exception ex){throw new RuntimeException(ex);}});}
         }
@@ -178,6 +227,10 @@ public final class Phase34WorkflowTest {
         EventPurpose purpose=venue.type()==VenueType.COMMERCIAL?EventPurpose.TICKETED_EVENT:EventPurpose.SOCIAL_GATHERING;
         return new EventDraft(name,description,EventType.CONCERT,purpose,EventVisibility.PUBLIC,
                 date,start,end,pax,venue,List.<TicketCategory>of());
+    }
+    private static VenueReservation blockingReservation(String id,Customer owner,Venue venue,LocalDate date,LocalTime start,LocalTime end){
+        return new VenueReservation(id,"",owner.getId(),venue.name(),date,start,end,ReservationPricing.HOURLY,
+                new BigDecimal("1.00"),BookingStatus.APPROVED,PaymentStatus.PAID,"");
     }
     private static void expectIllegal(Throwing action)throws Exception{try{action.run();throw new AssertionError("Expected IllegalArgumentException");}catch(IllegalArgumentException expected){}}
     @FunctionalInterface private interface Throwing{void run()throws Exception;}

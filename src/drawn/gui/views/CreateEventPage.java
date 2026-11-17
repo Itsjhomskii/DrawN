@@ -28,6 +28,8 @@ import javafx.util.StringConverter;
 import java.util.List;
 import java.util.Locale;
 import java.util.function.Function;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 
 /** Create & publish an event on an approved, paid venue reservation (console createEvent). */
 final class CreateEventPage {
@@ -50,17 +52,17 @@ final class CreateEventPage {
         Customer customer = shell.session().customer();
         String subtitle = "Turn an approved, paid venue reservation into a published event.";
         if (customer.getAge() < 16)
-            return Ui.page("Create & Publish Event", subtitle, Ui.muted("Customers must be at least 16 to submit an event."));
+            return Ui.page("Create & Publish Event", subtitle, backCrumb(), Ui.muted("Customers must be at least 16 to submit an event."));
         List<VenueReservation> eligible;
         try {
             eligible = shell.services().workflow().reservationsReadyForEvent(customer);
         } catch (Exception ex) {
-            return Ui.page("Create & Publish Event", subtitle, Ui.muted("Event submission failed: " + Ui.message(ex)));
+            return Ui.page("Create & Publish Event", subtitle, backCrumb(), Ui.muted("Event submission failed: " + Ui.message(ex)));
         }
         if (eligible.isEmpty()) {
             var request = Ui.primary("Request a Venue", () -> shell.showPage(MainShell.REQUEST_VENUE));
             request.setId("create-request-venue");
-            return Ui.page("Create & Publish Event", subtitle, Ui.card(
+            return Ui.page("Create & Publish Event", subtitle, backCrumb(), Ui.card(
                     Ui.section("No approved, paid venue reservation is ready for event details yet."),
                     Ui.muted("Request and pay for a venue first, then wait for administrator approval."), Ui.actions(request)));
         }
@@ -117,44 +119,74 @@ final class CreateEventPage {
 
         var publish = Ui.primary("Review & Publish", this::submit);
         publish.setId("create-publish");
-        var back = Ui.secondary("Back to My Events", () -> shell.showPage(MainShell.MY_EVENTS));
-        return new VBox(18, Ui.card(Ui.section("Event details"), details), tickets, Ui.actions(publish, back));
+        return new VBox(18, backCrumb(), Ui.card(Ui.section("Event details"), details), tickets, Ui.actions(publish));
+    }
+
+    private HBox backCrumb() {
+        return new HBox(8, BackNavigation.button(() -> shell.goBack(MainShell.MY_EVENTS)), Ui.muted("Back"));
     }
 
     private VBox ticketSection() {
         TextField categoryName = Ui.field("Category name");
         TextField price = Ui.field("Ticket price (PHP)");
         TextField quantity = Ui.field("Available quantity");
+        TextField salesStart = Ui.field("Sales open: YYYY-MM-DD HH:mm");
+        TextField salesDeadline = Ui.field("Sales close: YYYY-MM-DD HH:mm");
         categoryName.setId("category-name");
         price.setId("category-price");
         quantity.setId("category-quantity");
-        var add = Ui.secondary("Add Category", () -> addCategory(categoryName, price, quantity));
+        salesStart.setId("category-sales-start");
+        salesDeadline.setId("category-sales-deadline");
+        var add = Ui.secondary("Add Category", () -> addCategory(categoryName, price, quantity, salesStart, salesDeadline));
         add.setId("category-add");
-        HBox inputs = Ui.actions(categoryName, price, quantity, add);
+        HBox inputs = new HBox(8, categoryName, price, quantity, salesStart, salesDeadline, add);
+        inputs.setAlignment(javafx.geometry.Pos.CENTER_LEFT);
         HBox.setHgrow(categoryName, Priority.ALWAYS);
+        HBox.setHgrow(salesStart, Priority.ALWAYS);
+        HBox.setHgrow(salesDeadline, Priority.ALWAYS);
 
         TableView<TicketCategory> table = Ui.table(List.of(), "Add at least one ticket category.");
         table.setItems(categories);
         Ui.column(table, "Category", TicketCategory::name);
         Ui.column(table, "Price", category -> Ui.php(category.price()));
         Ui.column(table, "Quantity", category -> String.valueOf(category.quantity()));
+        Ui.column(table, "Sales open", category -> timeText(category.salesStart()));
+        Ui.column(table, "Sales close", category -> timeText(category.salesDeadline()));
         var remove = Ui.secondary("Remove Selected", () -> categories.remove(table.getSelectionModel().getSelectedItem()));
         remove.disableProperty().bind(table.getSelectionModel().selectedItemProperty().isNull());
         return Ui.card(Ui.section("Ticket categories"), Ui.muted("Total ticket quantity cannot exceed the venue capacity."),
                 inputs, table, Ui.actions(remove));
     }
 
-    private void addCategory(TextField categoryName, TextField price, TextField quantity) {
+    private void addCategory(TextField categoryName, TextField price, TextField quantity,
+                             TextField salesStart, TextField salesDeadline) {
         try {
             String label = Ui.required(categoryName.getText(), "Category name");
             if (categories.stream().anyMatch(category -> category.name().equalsIgnoreCase(label)))
                 throw new IllegalArgumentException("Category names must be unique. Enter a different name.");
+            VenueReservation selected = reservation.getValue();
+            if (selected == null) throw new IllegalArgumentException("Choose an approved venue reservation first.");
+            LocalDateTime defaultStart = LocalDateTime.now().withSecond(0).withNano(0);
+            LocalDateTime defaultDeadline = selected.date().atTime(selected.startTime()).minusMinutes(1);
+            LocalDateTime opens = salesStart.getText().isBlank() ? defaultStart : parseSalesTime(salesStart.getText(), "Sales opening time");
+            LocalDateTime closes = salesDeadline.getText().isBlank() ? defaultDeadline : parseSalesTime(salesDeadline.getText(), "Sales closing time");
             categories.add(new TicketCategory(label, Ui.amount(price.getText(), "Ticket price"),
-                    Ui.whole(quantity.getText(), 1, Integer.MAX_VALUE, "Available quantity")));
-            categoryName.clear(); price.clear(); quantity.clear();
+                    Ui.whole(quantity.getText(), 1, Integer.MAX_VALUE, "Available quantity"), opens, closes));
+            categoryName.clear(); price.clear(); quantity.clear(); salesStart.clear(); salesDeadline.clear();
         } catch (Exception ex) {
             Ui.error("Could not add ticket category", Ui.message(ex));
         }
+    }
+
+    private static LocalDateTime parseSalesTime(String text, String label) {
+        try { return LocalDateTime.parse(Ui.required(text, label).replace(' ', 'T')); }
+        catch (java.time.format.DateTimeParseException ex) {
+            throw new IllegalArgumentException(label + ": enter YYYY-MM-DD HH:mm.");
+        }
+    }
+
+    private static String timeText(LocalDateTime value) {
+        return value == null ? "Default" : value.format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm", Locale.ROOT));
     }
 
     private void submit() {
@@ -202,7 +234,8 @@ final class CreateEventPage {
                 .append("\nExpected attendance: ").append(draft.expectedAttendance())
                 .append("\nVenue: ").append(draft.venue().name());
         for (TicketCategory category : draft.ticketCategories())
-            text.append(String.format(Locale.ROOT, "%n  %s | %s | %d available", category.name(), Ui.php(category.price()), category.quantity()));
+            text.append(String.format(Locale.ROOT, "%n  %s | %s | %d available | sales %s–%s", category.name(),
+                    Ui.php(category.price()), category.quantity(), timeText(category.salesStart()), timeText(category.salesDeadline())));
         return text.toString();
     }
 

@@ -61,19 +61,27 @@ public final class EventPublishingService {
         if(event.purpose()!=drawn.model.event.EventPurpose.TICKETED_EVENT)
             throw new IllegalArgumentException("Social events cannot have ticket categories.");
         if(types==null||types.isEmpty())throw new IllegalArgumentException("Add at least one ticket category.");
+        List<TicketType> prior=tickets.types(eventId);
         Set<String> names=new HashSet<>();int total=0;
         for(TicketType type:types){
             if(!type.eventId().equals(eventId))throw new IllegalArgumentException("Ticket category belongs to another event.");
             if(type.price().signum()<=0)throw new IllegalArgumentException("Paid ticket prices must be greater than zero.");
             if(!names.add(type.name().trim().toLowerCase(Locale.ROOT)))throw new IllegalArgumentException("Ticket category names must be unique.");
             if(type.salesStart()!=null&&type.salesDeadline()!=null&&!type.salesDeadline().isAfter(type.salesStart()))throw new IllegalArgumentException("Ticket sales end must be after the start.");
-            if(type.salesStart()==null||type.salesDeadline()==null)throw new IllegalArgumentException("New ticket categories need a sales opening and closing time.");
-            if(type.salesDeadline().isAfter(event.date().atTime(event.startTime())))throw new IllegalArgumentException("Ticket sales deadline must be before event start.");
-            if(!type.salesDeadline().isAfter(LocalDateTime.now()))throw new IllegalArgumentException("Ticket sales end must be in the future.");
+            TicketType existing = prior.stream().filter(old -> old.id().equals(type.id())).findFirst().orElse(null);
+            boolean unchangedLegacyWindow = existing != null && existing.salesStart() == null && existing.salesDeadline() == null
+                    && type.salesStart() == null && type.salesDeadline() == null;
+            if((type.salesStart()==null||type.salesDeadline()==null) && !unchangedLegacyWindow)
+                throw new IllegalArgumentException("New ticket categories need a sales opening and closing time.");
+            if(type.salesDeadline()!=null && type.salesDeadline().isAfter(event.date().atTime(event.startTime())))
+                throw new IllegalArgumentException("Ticket sales deadline must be before event start.");
+            boolean unchangedWindow = existing != null && Objects.equals(existing.salesStart(), type.salesStart())
+                    && Objects.equals(existing.salesDeadline(), type.salesDeadline());
+            if(type.salesDeadline()!=null && !type.salesDeadline().isAfter(LocalDateTime.now()) && !unchangedWindow)
+                throw new IllegalArgumentException("Ticket sales end must be in the future.");
             total=Math.addExact(total,type.quantity());
         }
         if(total>event.venue().capacity())throw new IllegalArgumentException("Total ticket quantity exceeds venue capacity.");
-        List<TicketType> prior=tickets.types(eventId);
         for (TicketType old : prior) {
             if (old.sold() == 0) continue;
             TicketType replacement = types.stream().filter(type -> type.id().equals(old.id())).findFirst()

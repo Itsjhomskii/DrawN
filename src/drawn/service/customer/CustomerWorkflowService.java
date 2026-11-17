@@ -185,11 +185,12 @@ public final class CustomerWorkflowService {
             if (draft.visibility() == EventVisibility.PRIVATE) privateEventAccess.save(saved.id(), privateKeyword);
             if (draft.purpose() == EventPurpose.TICKETED_EVENT) {
                 String eventId = saved.id();
-                LocalDateTime salesStart = LocalDateTime.now();
-                LocalDateTime salesDeadline = reservation.date().atTime(reservation.startTime()).minusMinutes(1);
+                LocalDateTime defaultStart = LocalDateTime.now().withSecond(0).withNano(0);
+                LocalDateTime defaultDeadline = reservation.date().atTime(reservation.startTime()).minusMinutes(1);
                 List<TicketType> types = draft.ticketCategories().stream().map(category -> new TicketType(UUID.randomUUID().toString(),
                         eventId, category.name(), category.name() + " ticket", category.price(), category.quantity(), 0,
-                        salesStart, salesDeadline)).toList();
+                        category.salesStart() == null ? defaultStart : category.salesStart(),
+                        category.salesDeadline() == null ? defaultDeadline : category.salesDeadline())).toList();
                 publishingService.configureTickets(customer, saved.id(), types);
                 publishingService.publish(customer, saved.id());
             }
@@ -203,6 +204,28 @@ public final class CustomerWorkflowService {
             }
             throw creationFailure;
         }
+    }
+
+    /** Updates a published event's editable details and ticket setup without changing its approved schedule. */
+    public Event editPublishedEvent(Customer customer, String eventId, EventDraft draft,
+                                    List<TicketType> ticketTypes, String privateKeyword) throws IOException {
+        Event existing = eventService.eventsFor(customer).stream().filter(event -> event.id().equals(eventId))
+                .findFirst().orElseThrow(() -> new IllegalArgumentException("Event not found for this account."));
+        if (existing.approvalStatus() != EventApprovalStatus.PUBLISHED)
+            throw new IllegalArgumentException("Only a published event can be edited here.");
+        if (draft.purpose() != existing.purpose())
+            throw new IllegalArgumentException("Event purpose cannot be changed after publication.");
+        if (draft.visibility() == EventVisibility.PRIVATE && (privateKeyword == null || privateKeyword.isBlank()))
+            throw new IllegalArgumentException("Private event keyword is required.");
+        eventService.validateConfiguredEvent(customer, eventId, draft);
+        if (existing.purpose() == EventPurpose.TICKETED_EVENT) {
+            List<TicketType> before = publishingService.ticketTypes(eventId);
+            if (!before.equals(ticketTypes)) publishingService.configureTickets(customer, eventId, ticketTypes);
+        }
+        Event updated = eventService.editConfiguredEvent(customer, eventId, draft);
+        if (updated.visibility() == EventVisibility.PRIVATE) privateEventAccess.save(eventId, privateKeyword);
+        else privateEventAccess.delete(eventId);
+        return updated;
     }
 
     public static String displayPurpose(EventPurpose purpose) {

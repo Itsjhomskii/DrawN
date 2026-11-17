@@ -14,6 +14,9 @@ final class DashboardIcon extends StackPane {
             Map.entry("fi fi-rs-search-alt", "M10.8 18.2 A7.4 7.4 0 1 1 10.8 3.4 A7.4 7.4 0 1 1 10.8 18.2 M16.3 16.3 L21 21 M6.7 10.8 H10.8 M8.75 8.75 V12.85"),
             Map.entry("fi fi-br-menu-burger", "M4 6 H20 M4 12 H20 M4 18 H20"),
             Map.entry("fi fi-rr-angle-left", "M15 4 L7 12 L15 20"),
+            Map.entry("fi fi-rr-arrow-small-left", "M19 12 H5 M5 12 L11 6 M5 12 L11 18"),
+            Map.entry("fi fi-rr-marker", "M12 22 C12 22 4.5 14.5 4.5 9.5 A7.5 7.5 0 1 1 19.5 9.5 C19.5 14.5 12 22 12 22 Z M12 12 A2.5 2.5 0 1 0 12 7 A2.5 2.5 0 1 0 12 12 Z"),
+            Map.entry("fi fi-rr-calendar", "M4 5 H20 V21 H4 Z M8 3 V7 M16 3 V7 M4 10 H20"),
             // Filled, closed path so the floating action icon remains visible at small sizes.
             Map.entry("fi fi-rr-add", "M10 3 H14 V10 H21 V14 H14 V21 H10 V14 H3 V10 H10 Z"),
             Map.entry("fi fi-rs-heart", "M20.8 8.4 C20.8 13.5 12 20 12 20 C12 20 3.2 13.5 3.2 8.4 C3.2 3.6 9 2.3 12 6.8 C15 2.3 20.8 3.6 20.8 8.4 Z"),

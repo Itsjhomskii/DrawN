@@ -6,12 +6,12 @@ import javafx.animation.KeyFrame;
 import javafx.animation.KeyValue;
 import javafx.animation.ParallelTransition;
 import javafx.animation.RotateTransition;
-import javafx.animation.ScaleTransition;
 import javafx.animation.Timeline;
 import drawn.gui.AppServices;
 import drawn.gui.AppSession;
 import drawn.gui.DrawNApplication;
 import drawn.model.event.Event;
+import drawn.model.event.Venue;
 import drawn.model.ticket.TicketType;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
@@ -35,6 +35,8 @@ import javafx.scene.layout.VBox;
 import java.math.BigDecimal;
 import javafx.util.Duration;
 import java.util.LinkedHashMap;
+import java.util.ArrayDeque;
+import java.util.Deque;
 import java.util.List;
 import java.util.Map;
 
@@ -54,19 +56,30 @@ public final class MainShell {
     private final AppServices services;
     private final AppSession session;
     private final BorderPane root = new BorderPane();
+    private final StackPane centerLayer = new StackPane();
     private final VBox sidebar = new VBox(8);
     private final Map<String, Button> navigation = new LinkedHashMap<>();
+    private final Deque<String> pageHistory = new ArrayDeque<>();
     private boolean collapsed;
     private String activePage = "Home";
     private Button sidebarToggle;
     private CustomerMenuPages customerPages;
+    private Venue venueForRequest;
+    private boolean navigatingBack;
+    private RadialFab radialFab;
 
     public MainShell(DrawNApplication app, AppServices services, AppSession session) { this.app=app;this.services=services;this.session=session; }
 
     public Parent view() {
         root.getStyleClass().add("app-root");
         root.setLeft(sidebar);
-        customerPages = new CustomerMenuPages(services, session, this::showPage);
+        customerPages = new CustomerMenuPages(services, session, this::showPage, this::requestVenue, this::goBack);
+        radialFab = new RadialFab(
+                () -> { showPage(EXPLORE); javafx.application.Platform.runLater(customerPages::focusJoinField); },
+                () -> showPage("Explore Venues"),
+                () -> showPage(CREATE_EVENT));
+        radialFab.setMaxSize(Double.MAX_VALUE, Double.MAX_VALUE);
+        root.setCenter(centerLayer);
         sidebar.getStyleClass().add("sidebar");
         rebuildSidebar();
         showPage("Home");
@@ -83,6 +96,57 @@ public final class MainShell {
     }
 
     void logOut() { session.clear(); app.showLogin(); }
+
+    void requestVenue(Venue venue) {
+        venueForRequest = venue;
+        showPage(REQUEST_VENUE);
+    }
+
+    void goBack() {
+        if (pageHistory.isEmpty()) {
+            String fallback = switch (activePage) {
+                case "Venue Details" -> "Explore Venues";
+                case CREATE_EVENT -> MY_EVENTS;
+                case REQUEST_VENUE -> "Explore Venues";
+                default -> HOME;
+            };
+            showBackFallback(fallback);
+            return;
+        }
+        String previous = pageHistory.pop();
+        navigatingBack = true;
+        try { showPage(previous); }
+        finally { navigatingBack = false; }
+    }
+
+    void goBack(String fallbackPage) {
+        if (pageHistory.isEmpty()) showBackFallback(fallbackPage);
+        else goBack();
+    }
+
+    private void showBackFallback(String page) {
+        navigatingBack = true;
+        try { showPage(page); }
+        finally { navigatingBack = false; }
+    }
+
+    void showReservationConfirmation(drawn.model.event.VenueReservation reservation) {
+        activePage = REQUEST_VENUE;
+        Button reservations = Ui.primary("View Venue Reservations", () -> showPage(VENUES));
+        reservations.setId("confirmation-view-reservations");
+        Button explore = Ui.secondary("Explore More Venues", () -> showPage("Explore Venues"));
+        VBox confirmation = Ui.card(Ui.section("Reservation payment complete"),
+                Ui.title(reservation.venueName()),
+                Ui.details("Schedule", reservation.date() + "  •  " + drawn.gui.views.CustomerText.time(reservation.startTime())
+                                + "–" + drawn.gui.views.CustomerText.time(reservation.endTime()),
+                        "Amount paid", Ui.php(reservation.cost()),
+                        "Payment status", "PAID",
+                        "Reservation status", "PENDING"),
+                Ui.muted("Your request is awaiting administrator approval. The venue is not approved yet."),
+                Ui.actions(reservations, explore));
+        confirmation.getStyleClass().add("reservation-confirmation");
+        centerLayer.getChildren().setAll(Ui.page("Reservation Submitted", "Your payment has been recorded.", confirmation), radialFab);
+    }
 
     private void rebuildSidebar() {
         sidebar.getChildren().clear();
@@ -154,16 +218,26 @@ public final class MainShell {
         sidebar.getChildren().add(button);
     }
     public void showPage(String name) {
+        if (!navigatingBack && !name.equals(activePage)) pageHistory.push(activePage);
+        if (!name.equals(REQUEST_VENUE)) venueForRequest = null;
         activePage = name;
         navigation.values().forEach(button -> button.getStyleClass().remove("sidebar-item-active"));
-        Button active=navigation.get(name);if(active!=null)active.getStyleClass().add("sidebar-item-active");
-        if (name.equals("Home")) root.setCenter(home());
+        Button active=navigation.get(name.equals("Venue Details") ? "Explore Venues" : name);
+        if(active!=null)active.getStyleClass().add("sidebar-item-active");
+        if (name.equals("Home")) {
+            centerLayer.getChildren().setAll(home(), radialFab);
+            StackPane.setAlignment(radialFab, Pos.CENTER);
+        }
         else {
             Node workflow;
             if (name.equals(CREATE_EVENT)) {
                 workflow = new CreateEventPage(this).view();
             } else if (name.equals(REQUEST_VENUE)) {
-                workflow = new VenueRequestPage(this).view();
+                if (venueForRequest == null) {
+                    workflow = customerPages.page("Explore Venues");
+                } else {
+                    workflow = new VenueRequestPage(this, venueForRequest).view();
+                }
             } else if (name.equals(MY_EVENTS)) {
                 workflow = new MyEventsPage(this).view();
             } else if (name.equals(VENUES)) {
@@ -173,13 +247,15 @@ public final class MainShell {
             } else {
                 workflow = customerPages.page(name);
             }
-            root.setCenter(workflow == null ? placeholder(name) : workflow);
+            centerLayer.getChildren().setAll(workflow == null ? placeholder(name) : workflow, radialFab);
+            StackPane.setAlignment(radialFab, Pos.CENTER);
         }
     }
     private Node home() {
         Label greeting=new Label("Welcome back, "+session.account().getFirstName()+"!");greeting.getStyleClass().add("page-title");
         Label message=new Label("Discover what's happening around you.");message.getStyleClass().add("secondary-text");
         Button balance = new Button("Wallet balance: PHP " + money(session.account().getWalletBalance()), new DashboardIcon("fi fi-rr-wallet", 18));
+        balance.setId("home-wallet-balance");
         balance.getStyleClass().add("wallet-balance-button");
         balance.setTooltip(new Tooltip("Open Wallet & Transactions"));
         balance.setAccessibleText("Wallet balance PHP " + money(session.account().getWalletBalance()) + ". Open Wallet and Transactions.");
@@ -188,20 +264,7 @@ public final class MainShell {
         Node feed;
         try { List<Event> events=services.publishing().publishedEvents(); feed=events.isEmpty()?emptyState():eventGrid(events); }
         catch(Exception ex){ feed=errorState("Published events could not be loaded: "+ex.getMessage()); }
-        Button create=new Button("", new DashboardIcon("fi fi-rr-add", 23));create.getStyleClass().add("floating-action-button");create.setTooltip(new Tooltip("Create Event"));create.setAccessibleText("Create event");create.setOnAction(e->showPage(CREATE_EVENT));
-        ScaleTransition hoverScale = new ScaleTransition(Duration.millis(140), create);
-        hoverScale.setInterpolator(Interpolator.EASE_BOTH);
-        create.setOnMouseEntered(e -> animateCreateButton(hoverScale, 1.07));
-        create.setOnMouseExited(e -> animateCreateButton(hoverScale, 1.0));
-        StackPane content=new StackPane(feed,create);StackPane.setAlignment(create,Pos.BOTTOM_RIGHT);StackPane.setMargin(create,new Insets(0,28,28,0));
-        content.getStyleClass().add("events-section");
-        BorderPane page=new BorderPane(content);page.setTop(header);BorderPane.setMargin(content,new Insets(16,0,0,0));page.getStyleClass().add("content-page");return page;
-    }
-    private static void animateCreateButton(ScaleTransition transition, double scale) {
-        transition.stop();
-        transition.setToX(scale);
-        transition.setToY(scale);
-        transition.playFromStart();
+        BorderPane page=new BorderPane(feed);page.setTop(header);BorderPane.setMargin(feed,new Insets(16,0,0,0));page.getStyleClass().add("content-page");return page;
     }
     private Node eventGrid(List<Event> events) {
         GridPane grid=new GridPane();grid.setHgap(16);grid.setVgap(16);grid.setPadding(new Insets(4,0,84,0));

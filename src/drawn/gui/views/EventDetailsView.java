@@ -60,7 +60,8 @@ public final class EventDetailsView {
         String schedule = reservation == null
                 ? event.date() + " • " + CustomerText.time(event.startTime()) + "–" + CustomerText.time(event.endTime())
                 : CustomerText.reservationSchedule(reservation);
-        VBox details=new VBox(8,new Label(CustomerText.words(event.type())+" • "+schedule),new Label("Venue: "+event.venue().name()),new Label(event.description()));
+        VBox details=new VBox(8,new javafx.scene.layout.HBox(8, BackNavigation.button(dialog::close), Ui.muted("Event Details")),
+                new Label(CustomerText.words(event.type())+" • "+schedule),new Label("Venue: "+event.venue().name()),new Label(event.description()));
         details.getChildren().forEach(node->{if(node instanceof Label label)label.setWrapText(true);});dialog.getDialogPane().setContent(details);dialog.getDialogPane().getStyleClass().add("customer-dialog");dialog.showAndWait();
         if (canBuy && dialog.getResult() == buy) {
             new TicketPurchaseDialog(event, services, session, refresh).show();

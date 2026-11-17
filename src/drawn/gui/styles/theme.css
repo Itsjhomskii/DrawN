@@ -259,21 +259,10 @@
     -fx-min-height: 230;
 }
 .event-card-title { -fx-font-size: 18px; -fx-font-weight: 700; -fx-text-fill: #202622; }
-.floating-action-button {
-    -fx-background-color: #E5EEE5;
-    -fx-text-fill: #355642;
-    -fx-border-color: transparent;
-    -fx-background-radius: 30;
-    -fx-min-width: 58;
-    -fx-min-height: 58;
-    -fx-max-width: 58;
-    -fx-max-height: 58;
-    -fx-padding: 0;
-    -fx-alignment: center;
-}
-.floating-action-button:hover { -fx-background-color: #D8E5D9; }
-.floating-action-button .nav-icon-shape { -fx-stroke: #355642; -fx-stroke-width: 2.3; }
-.floating-action-button .nav-icon-shape.solid-add-icon { -fx-fill: #355642; -fx-stroke: #355642; -fx-stroke-width: 0.5; }
+.explore-event-search-row { -fx-alignment: center-left; -fx-padding: 10 0; }
+.event-owner-section { -fx-padding: 14; -fx-background-color: #F7F8F7; -fx-background-radius: 12; -fx-border-color: #E4E8E4; -fx-border-radius: 12; }
+.profile-avatar { -fx-min-width: 58; -fx-min-height: 58; -fx-alignment: center; -fx-background-color: #E5EEE5; -fx-background-radius: 29; -fx-text-fill: #355642; -fx-font-size: 20px; -fx-font-weight: 700; }
+.profile-card { -fx-padding: 22; -fx-background-color: #FFFFFF; -fx-background-radius: 12; -fx-border-color: #E4E8E4; -fx-border-radius: 12; }
 .create-event-button {
     -fx-background-color: #E5EEE5;
     -fx-text-fill: #355642;
@@ -300,6 +289,252 @@
     -fx-background-radius: 16;
     -fx-effect: dropshadow(gaussian, rgba(32, 38, 34, 0.06), 14, 0.1, 0, 3);
 }
+
+/* Editorial venue discovery and compact reservation management. */
+.venue-grid { -fx-padding: 4 0 12 0; }
+.venue-card {
+    -fx-background-color: #FFFFFF;
+    -fx-border-color: #E1E7E2;
+    -fx-border-width: 1;
+    -fx-border-radius: 12;
+    -fx-background-radius: 12;
+    -fx-padding: 14;
+    -fx-min-height: 350;
+    -fx-effect: dropshadow(gaussian, rgba(16, 29, 25, 0.045), 12, 0.08, 0, 3);
+}
+.venue-card:hover { -fx-border-color: #9DB8A2; }
+.venue-image {
+    -fx-min-height: 150;
+    -fx-pref-height: 150;
+    -fx-max-height: 150;
+    -fx-background-color: #F1EAE3;
+    -fx-background-radius: 8;
+}
+.venue-placeholder-label { -fx-text-fill: #66776C; -fx-font-size: 11px; -fx-font-weight: 700; }
+.venue-category { -fx-text-fill: #66776C; -fx-font-size: 11px; -fx-font-weight: 700; }
+.venue-card .event-card-title, .venue-detail-page .page-title { -fx-text-fill: #101D19; }
+.venue-card-actions { -fx-padding: 4 0 0 0; }
+.venue-card-actions .button { -fx-min-height: 38; }
+.venue-detail-layout { -fx-alignment: top-left; -fx-padding: 0; }
+.venue-detail-left { -fx-spacing: 12; -fx-padding: 0 0 12 0; }
+.venue-detail-left .event-card-title { -fx-font-size: 27px; -fx-text-fill: #101D19; }
+.venue-detail-image {
+    -fx-min-height: 240;
+    -fx-pref-height: 360;
+    -fx-max-height: 560;
+    -fx-background-color: #F1EAE3;
+    -fx-background-radius: 12;
+}
+.venue-detail-right { -fx-spacing: 18; -fx-padding: 2 0 16 0; }
+.venue-detail-right .editorial-section { -fx-font-size: 20px; }
+.google-rating-block { -fx-padding: 2 0 0 0; }
+.demo-rating-stars, .demo-review-stars { -fx-text-fill: #9A753D; -fx-font-weight: 700; }
+.demo-rating-stars { -fx-font-size: 16px; }
+.venue-detail-booking {
+    -fx-padding: 16;
+    -fx-background-color: #E9EEE8;
+    -fx-background-radius: 12;
+    -fx-border-color: #E1E7E2;
+    -fx-border-radius: 12;
+}
+.venue-detail-booking .primary-button { -fx-min-height: 48; -fx-font-size: 15px; }
+.venue-reviews { -fx-padding: 18 0 0 0; -fx-border-color: #E1E7E2 transparent transparent transparent; -fx-border-width: 1 0 0 0; }
+.demo-review-card {
+    -fx-padding: 12;
+    -fx-background-color: #FFFFFF;
+    -fx-background-radius: 10;
+    -fx-border-color: #E1E7E2;
+    -fx-border-radius: 10;
+}
+.demo-review-author { -fx-font-size: 12px; -fx-font-weight: 700; -fx-text-fill: #1B3028; }
+.back-navigation {
+    -fx-background-color: transparent;
+    -fx-border-color: transparent;
+    -fx-text-fill: #1B3028;
+    -fx-font-size: 23px;
+    -fx-font-weight: 500;
+    -fx-min-width: 36;
+    -fx-min-height: 36;
+    -fx-padding: 2 5;
+    -fx-background-radius: 18;
+    -fx-border-radius: 18;
+}
+.back-navigation:hover { -fx-background-color: #E9EEE8; }
+.back-navigation:focused { -fx-border-color: #557A61; -fx-border-width: 1.5; }
+.back-navigation .nav-icon-shape { -fx-stroke: #101D19; -fx-stroke-width: 1.9; }
+.radial-fab {
+    -fx-background-color: #9DB8A2;
+    -fx-border-color: transparent;
+    -fx-background-radius: 30;
+    -fx-border-radius: 30;
+    -fx-min-width: 58;
+    -fx-pref-width: 58;
+    -fx-max-width: 58;
+    -fx-min-height: 58;
+    -fx-pref-height: 58;
+    -fx-max-height: 58;
+    -fx-padding: 0;
+    -fx-alignment: center;
+    -fx-effect: dropshadow(gaussian, rgba(16, 29, 25, 0.22), 12, 0.12, 0, 4);
+}
+.radial-fab:hover { -fx-background-color: #89A58E; }
+.radial-fab .nav-icon-shape.solid-add-icon { -fx-fill: #101D19; -fx-stroke: #101D19; -fx-stroke-width: 0.5; }
+.radial-fab-action {
+    -fx-background-color: #FFFFFF;
+    -fx-text-fill: #101D19;
+    -fx-border-color: #E1E7E2;
+    -fx-border-width: 1;
+    -fx-background-radius: 24;
+    -fx-border-radius: 24;
+    -fx-padding: 0 16;
+    -fx-font-weight: 600;
+    -fx-graphic-text-gap: 9;
+    -fx-alignment: center-left;
+    -fx-effect: dropshadow(gaussian, rgba(16, 29, 25, 0.15), 10, 0.1, 0, 3);
+}
+.radial-fab-action:hover { -fx-background-color: #E9EEE8; -fx-effect: dropshadow(gaussian, rgba(16, 29, 25, 0.22), 13, 0.12, 0, 4); }
+.radial-fab-action .nav-icon-shape { -fx-stroke: #101D19; -fx-stroke-width: 1.9; }
+.wallet-page { -fx-padding: 12; -fx-spacing: 12; }
+.wallet-header { -fx-alignment: top-left; -fx-padding: 0 0 2 0; }
+.wallet-eyebrow { -fx-text-fill: #66776C; -fx-font-size: 10px; -fx-font-weight: 700; }
+.wallet-header .page-title { -fx-font-size: 20px; -fx-text-fill: #101D19; }
+.wallet-header .nav-icon-shape { -fx-stroke: #1B3028; -fx-stroke-width: 1.8; }
+.wallet-overview { -fx-alignment: top-left; }
+.wallet-balance-card {
+    -fx-padding: 16;
+    -fx-spacing: 14;
+    -fx-min-height: 176;
+    -fx-background-color: #1B3028;
+    -fx-background-radius: 16;
+    -fx-border-radius: 16;
+    -fx-effect: dropshadow(gaussian, rgba(16, 29, 25, 0.12), 12, 0.08, 0, 3);
+}
+.wallet-balance-label { -fx-text-fill: #E9EEE8; -fx-font-size: 10px; }
+.wallet-balance-value { -fx-text-fill: #FFFFFF; -fx-font-size: 24px; -fx-font-weight: 700; }
+.wallet-balance-caption { -fx-text-fill: #E9EEE8; -fx-font-size: 11px; }
+.wallet-add-funds-button {
+    -fx-background-color: #9DB8A2;
+    -fx-text-fill: #101D19;
+    -fx-border-color: #9DB8A2;
+    -fx-background-radius: 12;
+    -fx-border-radius: 12;
+    -fx-padding: 9 13;
+    -fx-font-size: 11px;
+    -fx-font-weight: 600;
+}
+.wallet-add-funds-button:hover { -fx-background-color: #B8CBB9; }
+.wallet-add-funds-button .nav-icon-shape { -fx-stroke: #101D19; -fx-stroke-width: 1.8; }
+.wallet-activity-card {
+    -fx-padding: 14;
+    -fx-spacing: 12;
+    -fx-min-height: 176;
+    -fx-background-color: #FFFFFF;
+    -fx-background-radius: 16;
+    -fx-border-color: #E1E7E2;
+    -fx-border-radius: 16;
+}
+.wallet-activity-card .section-title { -fx-font-size: 16px; -fx-text-fill: #101D19; }
+.wallet-activity-row { -fx-padding: 3 0; }
+.wallet-activity-label { -fx-text-fill: #66776C; -fx-font-size: 12px; }
+.wallet-activity-date { -fx-text-fill: #66776C; -fx-font-size: 11px; }
+.wallet-activity-icon { -fx-text-fill: #1B3028; -fx-font-size: 14px; }
+.wallet-summary-grid { -fx-alignment: top-left; }
+.financial-summary-card {
+    -fx-padding: 13;
+    -fx-spacing: 10;
+    -fx-background-color: #FFFFFF;
+    -fx-background-radius: 12;
+    -fx-border-color: #E1E7E2;
+    -fx-border-radius: 12;
+    -fx-min-height: 84;
+}
+.financial-summary-heading { -fx-alignment: center-left; -fx-spacing: 8; -fx-text-fill: #66776C; -fx-font-size: 10px; }
+.financial-summary-heading .label:first-child { -fx-text-fill: #1B3028; -fx-font-size: 14px; }
+.financial-summary-value { -fx-text-fill: #101D19; -fx-font-size: 13px; -fx-font-weight: 700; }
+.transaction-history-panel {
+    -fx-padding: 14;
+    -fx-spacing: 14;
+    -fx-background-color: #FFFFFF;
+    -fx-background-radius: 16;
+    -fx-border-color: #E1E7E2;
+    -fx-border-radius: 16;
+}
+.transaction-history-panel .section-title { -fx-font-size: 17px; -fx-text-fill: #101D19; }
+.transaction-category-filters { -fx-alignment: center-left; }
+.transaction-category-filter {
+    -fx-background-color: #F6F8F6;
+    -fx-text-fill: #66776C;
+    -fx-border-color: #F6F8F6;
+    -fx-background-radius: 18;
+    -fx-border-radius: 18;
+    -fx-padding: 6 12;
+    -fx-font-size: 10px;
+}
+.transaction-category-filter:hover { -fx-background-color: #E9EEE8; }
+.transaction-category-active { -fx-background-color: #E9EEE8; -fx-text-fill: #101D19; -fx-border-color: #E1E7E2; }
+.transaction-row {
+    -fx-background-color: #FFFFFF;
+    -fx-border-color: transparent transparent #E1E7E2 transparent;
+    -fx-border-width: 0 0 1 0;
+    -fx-background-radius: 0;
+    -fx-border-radius: 0;
+    -fx-padding: 9 0;
+    -fx-alignment: center-left;
+}
+.transaction-row:hover { -fx-background-color: #F6F8F6; }
+.transaction-row .label { -fx-text-fill: #101D19; }
+.transaction-row-description .secondary-text { -fx-text-fill: #66776C; -fx-font-size: 11px; }
+.transaction-row-icon { -fx-min-width: 36; -fx-min-height: 36; -fx-alignment: center; -fx-background-color: #E9EEE8; -fx-background-radius: 12; -fx-text-fill: #1B3028; -fx-font-size: 15px; }
+.transaction-credit { -fx-text-fill: #357C55 !important; -fx-font-weight: 700; }
+.transaction-debit { -fx-text-fill: #27342D !important; -fx-font-weight: 600; }
+.transaction-record-row { -fx-border-color: transparent transparent #E1E7E2 transparent; -fx-border-width: 0 0 1 0; }
+.transaction-details { -fx-padding: 10; -fx-min-width: 420; }
+.transaction-details-dialog { -fx-background-color: #FFFFFF; }
+.add-funds-dialog { -fx-spacing: 14; }
+.add-funds-dialog .page-title { -fx-font-size: 21px; -fx-text-fill: #101D19; }
+.add-funds-dialog .button { -fx-background-radius: 10; -fx-border-radius: 10; }
+.venue-detail-hero { -fx-background-color: #F6F8F6; -fx-padding: 18; -fx-background-radius: 12; }
+.venue-detail-hero .venue-image { -fx-min-height: 300; -fx-pref-height: 360; -fx-max-height: 460; }
+.venue-detail-hero .event-card-title { -fx-font-size: 25px; -fx-text-fill: #101D19; }
+.editorial-section { -fx-font-size: 17px; -fx-font-weight: 700; -fx-text-fill: #101D19; }
+.editorial-section-card, .booking-summary {
+    -fx-background-color: #F6F8F6;
+    -fx-border-color: #E1E7E2;
+    -fx-border-radius: 12;
+    -fx-background-radius: 12;
+    -fx-padding: 18;
+}
+.booking-summary { -fx-background-color: #FFFFFF; }
+.booking-summary .section-title { -fx-text-fill: #101D19; }
+.booking-balance { -fx-font-size: 20px; -fx-font-weight: 700; -fx-text-fill: #1B3028; }
+.reservation-list { -fx-spacing: 12; }
+.reservation-card {
+    -fx-background-color: #FFFFFF;
+    -fx-border-color: #E1E7E2;
+    -fx-border-radius: 12;
+    -fx-background-radius: 12;
+    -fx-padding: 18;
+}
+.reservation-card .section-title { -fx-text-fill: #101D19; }
+.reservation-total { -fx-font-size: 18px; -fx-font-weight: 700; -fx-text-fill: #101D19; }
+.reservation-status {
+    -fx-padding: 5 9;
+    -fx-background-radius: 14;
+    -fx-font-size: 11px;
+    -fx-font-weight: 700;
+}
+.status-pending { -fx-background-color: #F5EBD8; -fx-text-fill: #76572A; }
+.status-approved { -fx-background-color: #E9EEE8; -fx-text-fill: #355642; }
+.status-declined { -fx-background-color: #F8E7E5; -fx-text-fill: #9B443E; }
+.status-cancelled, .status-neutral { -fx-background-color: #F1F3F1; -fx-text-fill: #66776C; }
+.payment-status { -fx-background-color: #F6F8F6; -fx-text-fill: #1B3028; }
+.reservation-filters { -fx-alignment: center-left; -fx-padding: 2 0 4 0; }
+.reservation-filter { -fx-background-color: #FFFFFF; -fx-border-color: #E1E7E2; -fx-border-radius: 18; -fx-background-radius: 18; -fx-padding: 7 13; }
+.reservation-filter:selected { -fx-background-color: #E9EEE8; -fx-border-color: #9DB8A2; -fx-text-fill: #1B3028; -fx-font-weight: 700; }
+.reservation-confirmation { -fx-padding: 24; -fx-background-color: #F6F8F6; -fx-background-radius: 14; -fx-border-color: #E1E7E2; -fx-border-radius: 14; }
+.reservation-confirmation .section-title, .reservation-confirmation .page-title { -fx-text-fill: #101D19; }
+.reservation-detail-panel { -fx-padding: 8; -fx-min-width: 500; }
+.reservation-detail-panel .section-title { -fx-text-fill: #101D19; }
 
 /* Menus, dropdowns, scrolling and customer dialogs */
 .context-menu, .menu-item, .dialog-pane, .dialog-pane .header-panel { -fx-background-color: #FFFFFF; }

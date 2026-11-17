@@ -36,11 +36,13 @@ public final class CustomerEventCreationService {
             if (draft.visibility() == EventVisibility.PRIVATE) privateAccess.save(saved.id(), privateKeyword);
             if (draft.purpose() == EventPurpose.TICKETED_EVENT) {
                 String eventId = saved.id();
-                LocalDateTime salesStart = LocalDateTime.now();
-                LocalDateTime salesDeadline = draft.date().atTime(draft.startTime()).minusMinutes(1);
+                LocalDateTime defaultStart = LocalDateTime.now().withSecond(0).withNano(0);
+                LocalDateTime defaultDeadline = draft.date().atTime(draft.startTime()).minusMinutes(1);
                 List<TicketType> types = draft.ticketCategories().stream().map(category -> new TicketType(
                         UUID.randomUUID().toString(), eventId, category.name(), category.name() + " ticket",
-                        category.price(), category.quantity(), 0, salesStart, salesDeadline)).toList();
+                        category.price(), category.quantity(), 0,
+                        category.salesStart() == null ? defaultStart : category.salesStart(),
+                        category.salesDeadline() == null ? defaultDeadline : category.salesDeadline())).toList();
                 publishing.configureTickets(customer, saved.id(), types);
                 publishing.publish(customer, saved.id());
             }

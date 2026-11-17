@@ -15,6 +15,7 @@ import java.math.RoundingMode;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.util.List;
 import java.util.Objects;
@@ -37,7 +38,7 @@ public final class ReservationService {
         this.clock = Objects.requireNonNull(clock); this.paymentService = paymentService;
     }
 
-    public VenueReservation request(Customer customer, Event event, ReservationPricing pricing) throws IOException {
+    public synchronized VenueReservation request(Customer customer, Event event, ReservationPricing pricing) throws IOException {
         Objects.requireNonNull(customer); Objects.requireNonNull(event); Objects.requireNonNull(pricing);
         if (!event.organizerId().equals(customer.getId())) throw new IllegalArgumentException("Event does not belong to this customer.");
         if (reservations.findAll().stream().anyMatch(existing -> existing.eventId().equals(event.id())))
@@ -45,6 +46,7 @@ public final class ReservationService {
         if (event.date().isBefore(LocalDate.now(clock))) throw new IllegalArgumentException("Reservation date cannot be in the past.");
         if (event.expectedAttendance() > event.venue().capacity()) throw new IllegalArgumentException("Attendance exceeds venue capacity.");
         validatePricing(event.startTime(), event.endTime(), pricing);
+        ensureScheduleAvailable(event.venue().name(), event.date(), event.startTime(), event.endTime(), null);
         BigDecimal cost = price(event, pricing);
         VenueReservation booking = new VenueReservation(UUID.randomUUID().toString(), event.id(), customer.getId(),
                 event.venue().name(), event.date(), event.startTime(), event.endTime(), pricing, cost,
@@ -53,11 +55,12 @@ public final class ReservationService {
         return booking;
     }
 
-    public VenueReservation request(Customer customer, drawn.model.event.Venue venue, LocalDate date,
+    public synchronized VenueReservation request(Customer customer, drawn.model.event.Venue venue, LocalDate date,
                                     LocalTime start, LocalTime end, ReservationPricing pricing) throws IOException {
         Objects.requireNonNull(customer); Objects.requireNonNull(venue); Objects.requireNonNull(date);
         if (date.isBefore(LocalDate.now(clock))) throw new IllegalArgumentException("Reservation date cannot be in the past.");
         validatePricing(start, end, pricing);
+        ensureScheduleAvailable(venue.name(), date, start, end, null);
         Event pricingEvent = new Event("reservation-quote", customer.getId(), "Venue reservation", "Reservation quote",
                 drawn.model.event.EventType.CONFERENCE,
                 venue.type() == drawn.model.event.VenueType.COMMERCIAL ? drawn.model.event.EventPurpose.TICKETED_EVENT : drawn.model.event.EventPurpose.SOCIAL_GATHERING,
@@ -81,18 +84,13 @@ public final class ReservationService {
         reservations.attachEvent(reservationId, eventId, customer.getId());
     }
 
-    public VenueReservation approve(String reservationId) throws IOException {
+    public synchronized VenueReservation approve(String reservationId) throws IOException {
         VenueReservation r = reservations.findById(reservationId);
         if (r.status() != BookingStatus.PENDING) throw new IllegalArgumentException("Only pending requests can be approved.");
         if (r.paymentStatus() != PaymentStatus.PAID && r.paymentStatus() != PaymentStatus.VERIFIED)
             throw new IllegalArgumentException("Only fully paid reservation requests can be approved.");
         Event event = r.eventId().isBlank() ? null : eventById(r.eventId());
-        for (VenueReservation other : reservations.findAll()) {
-            if (other.id().equals(r.id()) || !other.venueName().equals(r.venueName()) || !other.date().equals(r.date())) continue;
-            if ((other.status() == BookingStatus.APPROVED || other.status() == BookingStatus.CONFIRMED || other.status() == BookingStatus.RESERVED)
-                    && overlaps(r.startTime(), r.endTime(), other.startTime(), other.endTime()))
-                throw new IllegalArgumentException("Another approved reservation conflicts with this time.");
-        }
+        ensureScheduleAvailable(r.venueName(), r.date(), r.startTime(), r.endTime(), r.id());
         if (event != null && event.expectedAttendance() > event.venue().capacity()) throw new IllegalArgumentException("Venue capacity exceeded.");
         VenueReservation updated = r.withStatus(BookingStatus.APPROVED, "");
         reservations.update(updated); return updated;
@@ -127,6 +125,39 @@ public final class ReservationService {
         return venue.hourlyRate().multiply(BigDecimal.valueOf(minutes))
                 .divide(BigDecimal.valueOf(60), 2, RoundingMode.HALF_UP);
     }
+
+    /** Ensures a venue booking has two clear hours from every other paid or approved booking at that venue. */
+    public void ensureScheduleAvailable(String venueName, LocalDate date, LocalTime start, LocalTime end,
+                                        String excludedReservationId) throws IOException {
+        Objects.requireNonNull(venueName, "Venue name cannot be null");
+        Objects.requireNonNull(date, "Date cannot be null");
+        if (start == null || end == null || !end.isAfter(start))
+            throw new IllegalArgumentException("End time must be later than start time.");
+        LocalDateTime candidateStart = date.atTime(start);
+        LocalDateTime candidateEnd = date.atTime(end);
+        for (VenueReservation other : reservations.findAll()) {
+            if (other.id().equals(excludedReservationId) || !other.venueName().equalsIgnoreCase(venueName)
+                    || !blocksSchedule(other)) continue;
+            LocalDateTime existingStart = other.date().atTime(other.startTime());
+            LocalDateTime existingEnd = other.date().atTime(other.endTime());
+            boolean enoughGap = !candidateStart.isBefore(existingEnd)
+                    ? java.time.Duration.between(existingEnd, candidateStart).toHours() >= 2
+                    : !existingStart.isBefore(candidateEnd)
+                    && java.time.Duration.between(candidateEnd, existingStart).toHours() >= 2;
+            if (!enoughGap)
+                throw new IllegalArgumentException("Venue bookings need a two-hour setup and cleaning gap.");
+        }
+    }
+
+    private static boolean blocksSchedule(VenueReservation reservation) {
+        if (reservation.status() == BookingStatus.CANCELLED || reservation.status() == BookingStatus.DECLINED
+                || reservation.status() == BookingStatus.EXPIRED) return false;
+        return reservation.status() == BookingStatus.APPROVED || reservation.status() == BookingStatus.CONFIRMED
+                || reservation.status() == BookingStatus.RESERVED
+                || reservation.paymentStatus() == PaymentStatus.PAID
+                || reservation.paymentStatus() == PaymentStatus.VERIFIED
+                || reservation.paymentStatus() == PaymentStatus.PENDING_VERIFICATION;
+    }
     public static void validatePricing(LocalTime start, LocalTime end, ReservationPricing pricing) {
         if (!end.isAfter(start)) throw new IllegalArgumentException("End time must be later than start time.");
         if (pricing == ReservationPricing.HOURLY
@@ -138,8 +169,5 @@ public final class ReservationService {
         if (pricing == ReservationPricing.HALF_DAY_AFTERNOON
                 && (start.isBefore(LocalTime.NOON) || end.isAfter(LocalTime.of(18, 0))))
             throw new IllegalArgumentException("Afternoon half-day reservations must fall between 12:00 and 18:00.");
-    }
-    private static boolean overlaps(LocalTime a1, LocalTime a2, LocalTime b1, LocalTime b2) {
-        return a1.isBefore(b2) && b1.isBefore(a2);
     }
 }
