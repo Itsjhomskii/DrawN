@@ -1,6 +1,7 @@
 package drawn.gui.admin;
 
 import drawn.model.event.Event;
+import drawn.service.admin.AdminDashboardService;
 import drawn.service.admin.AdminService;
 import javafx.beans.property.ReadOnlyStringWrapper;
 import javafx.collections.FXCollections;
@@ -10,6 +11,8 @@ import javafx.scene.Node;
 import javafx.scene.Parent;
 import javafx.scene.control.Button;
 import javafx.scene.control.Label;
+import javafx.scene.control.Tab;
+import javafx.scene.control.TabPane;
 import javafx.scene.control.TableColumn;
 import javafx.scene.control.TableView;
 import javafx.scene.control.TextField;
@@ -24,7 +27,7 @@ import java.math.BigDecimal;
 import java.util.List;
 import java.util.function.Function;
 
-/** Admin dashboard with session-only events and approved public submissions. */
+/** Admin dashboard: session-only events plus AdminDashboardService tabs (approvals, tickets, money, history). */
 public final class AdminView {
     public interface Host {
         List<Event> approvedPublicEvents() throws Exception;
@@ -34,11 +37,21 @@ public final class AdminView {
 
     private final Host app;
     private final AdminService admin;
+    private final AdminDashboardService dashboard;
+    private final String adminId;
     private final BorderPane root = new BorderPane();
+    private final Label status = new Label();
+    private TabPane tabs;
 
-    public AdminView(Host app, AdminService admin) {
+    public AdminView(Host app, AdminService admin, AdminDashboardService dashboard, String adminId) {
         this.app = app;
         this.admin = admin;
+        this.dashboard = dashboard;
+        this.adminId = adminId;
+        status.setId("admin-status");
+        status.setWrapText(true);
+        status.getStyleClass().add("admin-section");
+        status.setPadding(new Insets(10, 38, 0, 38));
     }
 
     public Parent view() {
@@ -58,7 +71,21 @@ public final class AdminView {
         return root;
     }
 
-    private void refresh() { root.setCenter(content()); }
+    /** Rebuilds every tab from the CSV data, keeping the tab the admin was on. */
+    private void refresh() {
+        int selected = tabs == null ? 0 : tabs.getSelectionModel().getSelectedIndex();
+        tabs = new TabPane();
+        tabs.setId("admin-tabs");
+        tabs.setTabClosingPolicy(TabPane.TabClosingPolicy.UNAVAILABLE);
+        Tab events = new Tab("Events", content());
+        events.setId("admin-tab-events");
+        tabs.getTabs().add(events);
+        tabs.getTabs().addAll(new AdminOperationsTabs(dashboard, adminId, status, this::refresh).tabs());
+        tabs.getSelectionModel().select(Math.max(0, selected));
+        VBox center = new VBox(status, tabs);
+        VBox.setVgrow(tabs, Priority.ALWAYS);
+        root.setCenter(center);
+    }
 
     private Node content() {
         List<AdminService.LegacyEvent> added = admin.events();
@@ -141,27 +168,27 @@ public final class AdminView {
         return text.trim();
     }
 
-    private static TextField field(String prompt) {
+    static TextField field(String prompt) {
         TextField field = new TextField(); field.setPromptText(prompt); field.getStyleClass().add("admin-input"); return field;
     }
-    private static Label label(String value) { Label label = new Label(value); label.getStyleClass().add("admin-muted"); return label; }
-    private static Label section(String value) { Label label = new Label(value); label.getStyleClass().add("admin-section"); return label; }
+    static Label label(String value) { Label label = new Label(value); label.getStyleClass().add("admin-muted"); return label; }
+    static Label section(String value) { Label label = new Label(value); label.getStyleClass().add("admin-section"); return label; }
     private static Region grow() { Region region = new Region(); HBox.setHgrow(region, Priority.ALWAYS); return region; }
 
-    private static <T> TableView<T> table(List<T> rows, String empty, String id) {
+    static <T> TableView<T> table(List<T> rows, String empty, String id) {
         TableView<T> table = new TableView<>(FXCollections.observableArrayList(rows));
         table.setId(id); table.setPlaceholder(label(empty));
         table.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY_FLEX_LAST_COLUMN);
         table.setPrefHeight(Math.min(380, 44 + Math.max(rows.size(), 3) * 34));
         table.setMinHeight(150); table.getStyleClass().add("admin-table"); return table;
     }
-    private static <T> void column(TableView<T> table, String name, Function<T, String> getter) {
+    static <T> void column(TableView<T> table, String name, Function<T, String> getter) {
         TableColumn<T, String> col = new TableColumn<>(name);
         col.setCellValueFactory(cell -> new ReadOnlyStringWrapper(getter.apply(cell.getValue())));
         col.setSortable(false); table.getColumns().add(col);
     }
 
-    private static final class ScrollWrapper {
+    static final class ScrollWrapper {
         final javafx.scene.control.ScrollPane node;
         ScrollWrapper(Node content) {
             node = new javafx.scene.control.ScrollPane(content);
