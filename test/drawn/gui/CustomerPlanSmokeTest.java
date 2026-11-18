@@ -124,6 +124,9 @@ public final class CustomerPlanSmokeTest {
                     "private invitation workflow has a separate panel");
             check(findById(shell.currentContent(), "private-event-results") != null,
                     "private invitation results remain independent from public discovery");
+            check(text(shell.currentContent()).contains("You haven't published any events yet.")
+                            && text(shell.currentContent()).contains("No public events available right now."),
+                    "Explore Events shows clear published-event and public-catalog empty states");
             check(keyword.getAccessibleText() != null && keyword.getAccessibleText().contains("invitation keyword"),
                     "private keyword field has an accessibility label");
             snapshot(stage, "explore-events");
@@ -246,6 +249,10 @@ public final class CustomerPlanSmokeTest {
             snapshot(stage, "wallet-dashboard");
             check(findById(shell.currentContent(), "wallet-balance-card") != null,
                     "wallet dashboard shows the current balance card");
+            javafx.scene.layout.Region walletBalanceCard = (javafx.scene.layout.Region) findById(shell.currentContent(), "wallet-balance-card");
+            check(walletBalanceCard.getBackground() != null
+                            && walletBalanceCard.getBackground().getFills().get(0).getFill().equals(javafx.scene.paint.Color.WHITE),
+                    "wallet balance card uses the shared white-and-sage page surface");
             check(findById(shell.currentContent(), "summary-total-top-ups") != null
                             && findById(shell.currentContent(), "summary-total-spending") != null
                             && findById(shell.currentContent(), "summary-refunds-received") != null,
@@ -361,6 +368,54 @@ public final class CustomerPlanSmokeTest {
             check(findById(shell.currentContent(), "digital-ticket-grid") != null,
                     "ticket details back arrow returns to the wallet with its list state");
             session.start(account, customer);
+            var publicOrganizerRegistration = services.customerAccess().register("Public", "Organizer",
+                    LocalDate.now().minusYears(28), ContactMethod.EMAIL, "public-organizer@example.test",
+                    "unused", new BigDecimal("20000.00"));
+            services.accounts().topUp(publicOrganizerRegistration.account(), new BigDecimal("20000.00"));
+            Venue publicVenue = VenueCatalog.all().stream().filter(venue -> venue.supports(EventPurpose.TICKETED_EVENT))
+                    .findFirst().orElseThrow();
+            Event publicEvent = createFixtureEvent(services, publicOrganizerRegistration.customer(),
+                    publicOrganizerRegistration.account(), publicVenue, "Public Concert Example", EventType.CONCERT,
+                    EventVisibility.PUBLIC, LocalDate.now().plusDays(45), "");
+            Event privateEvent = createFixtureEvent(services, publicOrganizerRegistration.customer(),
+                    publicOrganizerRegistration.account(), publicVenue, "Private Seminar Example", EventType.SEMINAR,
+                    EventVisibility.PRIVATE, LocalDate.now().plusDays(46), "smoke-private-key");
+
+            shell.showPage(MainShell.EXPLORE);
+            refresh(root);
+            javafx.scene.layout.FlowPane publicGrid = (javafx.scene.layout.FlowPane) findById(shell.currentContent(), "public-event-grid");
+            javafx.scene.layout.FlowPane ownedGrid = (javafx.scene.layout.FlowPane) findById(shell.currentContent(), "owned-event-grid");
+            check(publicGrid.getChildren().size() == 1 && text(publicGrid).contains(publicEvent.name()),
+                    "public discovery includes the other organizer's published event only");
+            check(!text(publicGrid).contains(privateEvent.name()),
+                    "public discovery does not reveal the private event");
+            ((ToggleButton) findById(shell.currentContent(), "event-filter-concerts")).fire();
+            refresh(root);
+            publicGrid = (javafx.scene.layout.FlowPane) findById(shell.currentContent(), "public-event-grid");
+            ownedGrid = (javafx.scene.layout.FlowPane) findById(shell.currentContent(), "owned-event-grid");
+            field(shell.currentContent(), "explore-event-search").setText("Public Concert");
+            refresh(root);
+            check(publicGrid.getChildren().size() == 1 && text(publicGrid).contains(publicEvent.name()),
+                    "public search and the selected event category work together");
+            check(ownedGrid.getChildren().size() == 2,
+                    "public discovery filters do not affect the organizer's published-event cards");
+            field(shell.currentContent(), "explore-event-search").setText("no matching event");
+            refresh(root);
+            check(text(publicGrid).contains("No events match your search."),
+                    "combined public filters show a clear no-results state");
+            button(shell.currentContent(), "clear-event-filters").fire();
+            refresh(root);
+            TextField invitation = field(shell.currentContent(), "explore-keyword");
+            invitation.setText("invalid-keyword");
+            button(shell.currentContent(), "explore-find").fire();
+            refresh(root);
+            check(!text(findById(shell.currentContent(), "private-event-results")).contains(privateEvent.name()),
+                    "invalid private invitation does not expose the event");
+            invitation.setText("smoke-private-key");
+            button(shell.currentContent(), "explore-find").fire();
+            refresh(root);
+            check(text(findById(shell.currentContent(), "private-event-results")).contains(privateEvent.name()),
+                    "valid private invitation reveals only the matching event");
             stage.close();
         } catch (Exception ex) { throw new RuntimeException(ex); }
     }
@@ -387,6 +442,19 @@ public final class CustomerPlanSmokeTest {
                 services.eventCreationService().create(customer, draft, reservation.id(), "");
             }
         }
+    }
+
+    private static Event createFixtureEvent(AppServices services, Customer organizer, AccountStore.Account account,
+                                            Venue venue, String name, EventType type, EventVisibility visibility,
+                                            LocalDate date, String privateKeyword) throws Exception {
+        VenueReservation reservation = services.venueWorkflow().requestAndPay(organizer, account, venue, date,
+                java.time.LocalTime.of(14, 0), java.time.LocalTime.of(18, 0), ReservationPricing.HALF_DAY_AFTERNOON);
+        services.reservations().approve(reservation.id());
+        EventDraft draft = new EventDraft(name, "Isolated customer discovery smoke fixture.", type,
+                EventPurpose.TICKETED_EVENT, visibility, date, java.time.LocalTime.of(14, 0),
+                java.time.LocalTime.of(18, 0), 20, venue,
+                List.of(new TicketCategory("General", new BigDecimal("500.00"), 20)));
+        return services.eventCreationService().create(organizer, draft, reservation.id(), privateKeyword);
     }
 
     private static Button button(Node root, String id) {

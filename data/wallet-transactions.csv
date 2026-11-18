@@ -14,3 +14,4 @@ accountId,type,amount,balanceAfter,timestamp
 "agtotojhomar@gmail.com","REFUND:venue:0e88ae80-fab9-40b1-80fb-d6a7db16aacc","132000.00","999776.67","2026-11-17T21:42:04.481297600"
 "agtotojhomar@gmail.com","TOP_UP","1","999777.67","2026-11-17T22:55:40.222819200"
 "agtotojhomar@gmail.com","TOP_UP","100","999877.67","2026-11-17T23:02:00.045353800"
+"+639814133121","PAYMENT:ticket:fec5a062-3e72-466b-ba4f-4d39917e05fa","10","499980.00","2026-11-18T22:11:39.928195600"

@@ -109,6 +109,7 @@ final class CustomerMenuPages {
         for (String category : List.of("All Events", "Upcoming", "Concerts", "Parties", "Seminars", "Other")) {
             ToggleButton filter = new ToggleButton(category);
             filter.setToggleGroup(eventFilters);
+            filter.setId("event-filter-" + category.toLowerCase(java.util.Locale.ROOT).replace(' ', '-'));
             filter.getStyleClass().add("event-filter");
             filter.setUserData(category);
             if (category.equals(eventCategoryFilter)) eventFilters.selectToggle(filter);
@@ -121,11 +122,12 @@ final class CustomerMenuPages {
         joinKeywordField.setOnAction(event -> loadPrivateEvents(joinKeywordField.getText(), privateResults));
 
         FlowPane ownedCards = new FlowPane(16, 16);
+        ownedCards.setId("owned-event-grid");
         ownedCards.getStyleClass().add("event-grid");
         ownedCards.setMaxWidth(Double.MAX_VALUE);
         ownedCards.getChildren().setAll(owned.stream().map(event -> eventCard(event, true)).toList());
         resizeCards(ownedCards);
-        if (owned.isEmpty()) ownedCards.getChildren().add(body("Your published events will appear here."));
+        if (owned.isEmpty()) ownedCards.getChildren().add(body("You haven't published any events yet."));
         ownedCards.setVisible(!ownerEventsCollapsed);
         ownedCards.setManaged(!ownerEventsCollapsed);
         Button collapseOwned = secondary(ownerEventsCollapsed ? "Show my events" : "Hide my events", () -> { });
@@ -145,6 +147,7 @@ final class CustomerMenuPages {
         ownedSection.getStyleClass().add("event-owner-section");
 
         FlowPane publicCards = new FlowPane(16, 16);
+        publicCards.setId("public-event-grid");
         publicCards.getStyleClass().add("event-grid");
         publicCards.setMaxWidth(Double.MAX_VALUE);
         Runnable refreshPublic = () -> {
@@ -173,7 +176,13 @@ final class CustomerMenuPages {
             resizeCards(publicCards);
             if (matches.isEmpty()) {
                 boolean filtered = !query.isBlank() || !category.equals("All Events");
-                publicCards.getChildren().add(emptyState(filtered ? "No events match your search." : "No public events available right now. Check back soon for upcoming experiences."));
+                VBox empty = new VBox(8,
+                        title(filtered ? "No events match your search." : "No public events available right now."),
+                        body(filtered ? "Try changing your search or category." : "Check back soon for upcoming experiences."));
+                empty.setAlignment(Pos.CENTER);
+                empty.setPadding(new Insets(32));
+                empty.getStyleClass().add("empty-state");
+                publicCards.getChildren().add(empty);
                 if (filtered) {
                     Button clear = secondary("Clear Filters", () -> {
                         search.clear();
@@ -181,6 +190,7 @@ final class CustomerMenuPages {
                             if ("All Events".equals(toggle.getUserData())) { eventFilters.selectToggle(toggle); break; }
                         }
                     });
+                    clear.setId("clear-event-filters");
                     publicCards.getChildren().add(clear);
                 }
             }

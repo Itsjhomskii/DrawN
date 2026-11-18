@@ -490,14 +490,15 @@
     -fx-padding: 16;
     -fx-spacing: 14;
     -fx-min-height: 176;
-    -fx-background-color: #1B3028;
+    -fx-background-color: #FFFFFF;
     -fx-background-radius: 16;
+    -fx-border-color: #E1E7E2;
     -fx-border-radius: 16;
-    -fx-effect: dropshadow(gaussian, rgba(16, 29, 25, 0.12), 12, 0.08, 0, 3);
+    -fx-effect: dropshadow(gaussian, rgba(16, 29, 25, 0.045), 9, 0.06, 0, 2);
 }
-.wallet-balance-label { -fx-text-fill: #E9EEE8; -fx-font-size: 10px; }
-.wallet-balance-value { -fx-text-fill: #FFFFFF; -fx-font-size: 24px; -fx-font-weight: 700; }
-.wallet-balance-caption { -fx-text-fill: #E9EEE8; -fx-font-size: 11px; }
+.wallet-balance-label { -fx-text-fill: #66776C; -fx-font-size: 10px; -fx-font-weight: 700; }
+.wallet-balance-value { -fx-text-fill: #101D19; -fx-font-size: 24px; -fx-font-weight: 700; }
+.wallet-balance-caption { -fx-text-fill: #66776C; -fx-font-size: 11px; }
 .wallet-add-funds-button {
     -fx-background-color: #9DB8A2;
     -fx-text-fill: #101D19;
