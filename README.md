@@ -42,6 +42,14 @@ java -ea -cp "target/classes;target/test-classes" drawn.RegistrationWalletTest
 java -ea -cp "target/classes;target/test-classes" drawn.service.event.EventServiceTest
 java -ea -cp "target/classes;target/test-classes" drawn.service.event.Phase34WorkflowTest
 java -ea -cp "target/classes;target/test-classes" drawn.service.event.CustomerRecoveryAndEarningsTest
+java -ea -cp "target/classes;target/test-classes" drawn.service.admin.AdminDashboardServiceTest
+java -ea -cp "target/classes;target/test-classes" drawn.service.admin.AdminDashboardFlowTest
+```
+
+The admin screen test (approve, decline with refund, every admin tab) needs JavaFX on the module path; add a folder name at the end to save screenshots:
+
+```powershell
+java -ea --module-path "$env:USERPROFILE\.m2\repository\org\openjfx\javafx-base\21.0.2\javafx-base-21.0.2-win.jar;$env:USERPROFILE\.m2\repository\org\openjfx\javafx-graphics\21.0.2\javafx-graphics-21.0.2-win.jar;$env:USERPROFILE\.m2\repository\org\openjfx\javafx-controls\21.0.2\javafx-controls-21.0.2-win.jar" --add-modules javafx.controls -cp "target/classes;target/test-classes" drawn.gui.admin.AdminViewSmokeTest
 ```
 
 These assertion-based checks use temporary data directories and do not write to the project's `data/` CSV files. The organizer commission defaults to 10%. Set the Java system property `drawn.commission.percent` to a value from 0 to 100 to change it, for example `java -Ddrawn.commission.percent=12.5 -cp target/classes drawn.DrawN`.

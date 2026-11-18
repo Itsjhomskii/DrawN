@@ -40,6 +40,35 @@ public final class AdminAuditLog {
         return lines;
     }
 
+    public record Decision(String timestamp, String admin, String action, String targetId, String detail) { }
+
+    /** Parsed decisions, newest first; rows that are not five quoted fields are skipped. */
+    public synchronized List<Decision> decisions() throws IOException {
+        List<Decision> result = new ArrayList<>();
+        for (String line : entries()) {
+            List<String> f = parse(line);
+            if (f.size() == 5) result.add(new Decision(f.get(0), f.get(1), f.get(2), f.get(3), f.get(4)));
+        }
+        java.util.Collections.reverse(result);
+        return result;
+    }
+
+    /** Reads one row written by {@link #quote}: every field quoted, inner quotes doubled. */
+    private static List<String> parse(String line) {
+        List<String> fields = new ArrayList<>();
+        StringBuilder field = new StringBuilder();
+        boolean quoted = false;
+        for (int i = 0; i < line.length(); i++) {
+            char c = line.charAt(i);
+            if (quoted && c == '"' && i + 1 < line.length() && line.charAt(i + 1) == '"') { field.append('"'); i++; }
+            else if (c == '"') quoted = !quoted;
+            else if (c == ',' && !quoted) { fields.add(field.toString()); field.setLength(0); }
+            else field.append(c);
+        }
+        fields.add(field.toString());
+        return fields;
+    }
+
     private static String quote(String value) {
         return "\"" + (value == null ? "" : value.replace("\"", "\"\"")) + "\"";
     }
