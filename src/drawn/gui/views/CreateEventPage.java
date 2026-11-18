@@ -128,7 +128,7 @@ final class CreateEventPage {
 
     private VBox ticketSection() {
         TextField categoryName = Ui.field("Category name");
-        TextField price = Ui.field("Ticket price (PHP)");
+        TextField price = Ui.field("Ticket price (₱)");
         TextField quantity = Ui.field("Available quantity");
         TextField salesStart = Ui.field("Sales open: YYYY-MM-DD HH:mm");
         TextField salesDeadline = Ui.field("Sales close: YYYY-MM-DD HH:mm");

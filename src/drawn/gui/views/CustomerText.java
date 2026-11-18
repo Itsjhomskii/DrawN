@@ -30,6 +30,11 @@ final class CustomerText {
 
     static String time(LocalTime time) { return TIME.format(time); }
 
+    static String bookingStatus(BookingStatus status) {
+        return status == BookingStatus.RESERVED || status == BookingStatus.PENDING_PAYMENT
+                ? "Pending" : words(status);
+    }
+
     static String reservationSchedule(VenueReservation reservation) {
         if (reservation.pricing() == ReservationPricing.HOURLY)
             return reservation.date() + " • " + time(reservation.startTime()) + "–" + time(reservation.endTime())
@@ -49,17 +54,18 @@ final class CustomerText {
         }
         if (reservation.status() == BookingStatus.APPROVED || reservation.status() == BookingStatus.CONFIRMED) return "Approved";
         if (reservation.paymentStatus() == PaymentStatus.PAID || reservation.paymentStatus() == PaymentStatus.VERIFIED
-                || reservation.paymentStatus() == PaymentStatus.PENDING_VERIFICATION) return "Reserved";
-        return "Reserved";
+                || reservation.paymentStatus() == PaymentStatus.PENDING_VERIFICATION) return "Pending";
+        return "Pending";
     }
 
     static String eventStatus(Event event) {
         return switch (event.approvalStatus()) {
             case PUBLISHED -> "Published";
             case APPROVED -> "Approved";
-            case CANCELLED, CANCELLATION_PENDING -> "Cancelled";
+            case CANCELLED -> "Cancelled";
+            case CANCELLATION_PENDING -> "Cancellation Pending";
             case REJECTED -> "Declined";
-            default -> "Reserved";
+            default -> "Pending";
         };
     }
 }

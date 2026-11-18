@@ -2,6 +2,7 @@ package drawn.gui;
 
 import drawn.gui.views.Ui;
 import drawn.model.event.EventPurpose;
+import drawn.model.event.Event;
 import drawn.model.event.ReservationPricing;
 import drawn.model.event.VenueReservation;
 import drawn.service.customer.CustomerWorkflowService;
@@ -100,7 +101,7 @@ public final class GuiSmokeTest {
         type("topup-amount", "1000");
         fire("topup-button");
         expectNotice("INFO Top-up successful.");
-        expect(label("#wallet-balance").getText().equals("PHP 21000.00"), "balance after top-up");
+        expect(label("#wallet-balance").getText().equals("₱21,000.00"), "balance after top-up");
         expect(table("funding-table").getItems().size() == 2, "initial funding + top-up listed");
         shot("04-wallet");
 
@@ -154,9 +155,14 @@ public final class GuiSmokeTest {
         shot("07-create-event");
         fire("create-publish");
         expectNotice("INFO Event published.");
-        TableView<?> myEvents = table("my-events-table");
-        expect(myEvents.getItems().size() == 1, "published event listed under My Events");
-        myEvents.getSelectionModel().select(0);
+        Event published = services.events().eventsFor(services.customerAccess()
+                .authenticate("ana@example.com", "secret123").customer()).get(0);
+        expect(node("event-details-" + published.id()) != null, "published event card is listed under My Events");
+        expect(node("organizer-summary-grid") != null, "organizer overview is present");
+        fire("event-details-" + published.id());
+        expect(node("event-ticket-categories") != null, "event details route opens with ticket categories");
+        fire("back-navigation");
+        expect(node("event-details-" + published.id()) != null, "event detail breadcrumb returns to My Events");
         shot("08-my-events");
 
         // ---- A second customer buys tickets, then cancels them ----
@@ -200,10 +206,16 @@ public final class GuiSmokeTest {
         type("login-password", "secret123");
         fire("login-button");
         fire("nav-My-Events");
-        table("my-events-table").getSelectionModel().select(0);
+        Event ownedEvent = services.events().eventsFor(services.customerAccess()
+                .authenticate("ana@example.com", "secret123").customer()).get(0);
+        fire("event-details-" + ownedEvent.id());
         fire("cancel-event");
         expectNotice("INFO Event cancelled.");
-        expect(table("my-events-table").getItems().isEmpty(), "cancelled event no longer active");
+        expect(node("event-details-" + ownedEvent.id()) != null, "cancelled event remains visible with its status");
+        expect(node("event-status-" + ownedEvent.id()).getClass().getSimpleName().equals("Label"),
+                "cancelled event shows its current status");
+        expect(((Label) node("event-status-" + ownedEvent.id())).getText().equals("Cancelled"),
+                "cancelled event status is accurate");
 
         // ---- Venue request cancellation (social gathering) ----
         fire("nav-Venue-Reservations");

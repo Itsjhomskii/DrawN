@@ -102,7 +102,7 @@ final class WalletPage {
         amount.getStyleClass().add("wallet-balance-value");
         Label walletName = new Label("DrawN Wallet");
         walletName.getStyleClass().add("wallet-balance-caption");
-        Button addFunds = new Button("Add Funds", new DashboardIcon("fi fi-rr-add", 14));
+        Button addFunds = new Button("Add Funds", new DashboardIcon("fi fi-rs-add", 14));
         addFunds.setId("topup-button");
         addFunds.getStyleClass().add("wallet-add-funds-button");
         addFunds.setOnAction(event -> showAddFunds());
@@ -117,9 +117,9 @@ final class WalletPage {
         activityCard.getStyleClass().add("wallet-activity-card");
         Label activityTitle = Ui.section("Financial overview");
         activityCard.getChildren().add(activityTitle);
-        activityCard.getChildren().add(activityLine("Wallet credits", latestDate(this::isCredit), "↙"));
-        activityCard.getChildren().add(activityLine("Event spending", latestDate(this::isPayment), "↗"));
-        activityCard.getChildren().add(activityLine("Refund activity", latestDate(t -> t.type().startsWith("REFUND:")), "↶"));
+        activityCard.getChildren().add(activityLine("Wallet credits", latestDate(this::isCredit), "fi fi-rr-wallet-income"));
+        activityCard.getChildren().add(activityLine("Event spending", latestDate(this::isPayment), "fi fi-rr-wallet-arrow"));
+        activityCard.getChildren().add(activityLine("Refund activity", latestDate(t -> t.type().startsWith("REFUND:")), "fi fi-rs-refund-alt"));
 
         FlowPane overview = new FlowPane(12, 12, balanceCard, activityCard);
         overview.getStyleClass().add("wallet-overview");
@@ -128,7 +128,7 @@ final class WalletPage {
     }
 
     private HBox activityLine(String label, String date, String icon) {
-        Label glyph = new Label(icon);
+        DashboardIcon glyph = new DashboardIcon(icon, 16);
         glyph.getStyleClass().add("wallet-activity-icon");
         Label name = new Label(label);
         name.getStyleClass().add("wallet-activity-label");
@@ -151,16 +151,16 @@ final class WalletPage {
         BigDecimal spending = sum(data.transactions().stream().filter(this::isPayment).toList());
         BigDecimal refunds = sum(data.transactions().stream().filter(t -> t.type().startsWith("REFUND:")).toList());
         FlowPane cards = new FlowPane(12, 12,
-                summaryCard("Total Top-ups", peso(topups), "↙", "Includes initial funding and successful top-ups"),
-                summaryCard("Total Spending", peso(spending), "▣", "Gross wallet payments · refunds shown separately"),
-                summaryCard("Refunds Received", peso(refunds), "↶", "Completed wallet refunds"));
+                summaryCard("Total Top-ups", peso(topups), "fi fi-rr-wallet-income", "Includes initial funding and successful top-ups"),
+                summaryCard("Total Spending", peso(spending), "fi fi-rs-money-wings", "Gross wallet payments · refunds shown separately"),
+                summaryCard("Refunds Received", peso(refunds), "fi fi-rs-refund-alt", "Completed wallet refunds"));
         cards.getStyleClass().add("wallet-summary-grid");
         cards.setId("wallet-summary-grid");
         return cards;
     }
 
     private VBox summaryCard(String title, String value, String icon, String caption) {
-        HBox heading = new HBox(8, new Label(icon), new Label(title));
+        HBox heading = new HBox(8, new DashboardIcon(icon, 17), new Label(title));
         heading.getStyleClass().add("financial-summary-heading");
         Label amount = new Label(value);
         amount.getStyleClass().add("financial-summary-value");
@@ -218,7 +218,10 @@ final class WalletPage {
                 : CustomerWorkflowService.transactionLabel(transaction.type());
         if (label.equals(transaction.type())) label = readableType(transaction.type());
         String rowLabel = label;
-        Label icon = new Label(credit ? "↙" : "↗");
+        String iconName = transaction.type().startsWith("REFUND:") ? "fi fi-rs-refund-alt"
+                : CustomerWorkflowService.isFunding(transaction) ? "fi fi-rr-wallet-income"
+                : isEventTransaction(transaction) ? "fi fi-rr-ticket-alt" : "fi fi-rr-wallet-arrow";
+        DashboardIcon icon = new DashboardIcon(iconName, 20);
         icon.getStyleClass().add("transaction-row-icon");
         VBox description = new VBox(3, new Label(label), muted(transaction.timestamp().format(WHEN)));
         description.getStyleClass().add("transaction-row-description");
@@ -252,7 +255,7 @@ final class WalletPage {
     }
 
     private HBox recordRow(String kind, String title, String date, String detail) {
-        Label icon = new Label("▣");
+        DashboardIcon icon = new DashboardIcon("fi fi-rr-ticket-alt", 20);
         icon.getStyleClass().add("transaction-row-icon");
         VBox description = new VBox(3, new Label(title), muted(date));
         HBox content = new HBox(12, icon, description, Ui.grow(), muted(detail));
@@ -313,7 +316,7 @@ final class WalletPage {
         if (scroll.getScene() != null) dialog.initOwner(scroll.getScene().getWindow());
         ButtonType confirmType = new ButtonType("Confirm Top-up", ButtonBar.ButtonData.OK_DONE);
         dialog.getDialogPane().getButtonTypes().setAll(confirmType);
-        TextField amount = Ui.field("Amount in PHP");
+        TextField amount = Ui.field("Amount in ₱");
         amount.setId("topup-amount");
         Label preview = Ui.muted("Enter an amount to preview the top-up.");
         Label error = Ui.errorLabel();
@@ -322,7 +325,7 @@ final class WalletPage {
         confirm.getStyleClass().add("primary-button");
         amount.textProperty().addListener((observable, oldValue, value) -> {
             try { preview.setText("You are adding " + peso(Ui.amount(value, "Top-up amount")) + " to your wallet."); }
-            catch (RuntimeException ex) { preview.setText("Enter an amount greater than PHP 0.00."); }
+            catch (RuntimeException ex) { preview.setText("Enter an amount greater than ₱0.00."); }
         });
         confirm.addEventFilter(ActionEvent.ACTION, event -> {
             event.consume();
@@ -330,7 +333,7 @@ final class WalletPage {
             confirm.setDisable(true);
             try {
                 BigDecimal value = Ui.amount(amount.getText(), "Top-up amount");
-                if (value.signum() <= 0) throw new IllegalArgumentException("Top-up amount must be greater than PHP 0.00.");
+                if (value.signum() <= 0) throw new IllegalArgumentException("Top-up amount must be greater than ₱0.00.");
                 shell.services().accounts().topUp(shell.session().account(), value);
                 dialog.setResult(confirmType);
                 dialog.close();
@@ -344,7 +347,7 @@ final class WalletPage {
         VBox content = new VBox(14, new HBox(8, BackNavigation.button(dialog::close), Ui.muted("Wallet  ›  Add Funds")),
                 Ui.title("Add Funds"),
                 Ui.muted("Top up your DrawN wallet using simulated funds."), amount,
-                Ui.muted("Minimum: PHP 0.01 · Maximum: PHP 100,000.00"), preview, error);
+                Ui.muted("Minimum: ₱0.01 · Maximum: ₱100,000.00"), preview, error);
         content.setPadding(new Insets(8));
         content.setPrefWidth(390);
         content.getStyleClass().add("add-funds-dialog");

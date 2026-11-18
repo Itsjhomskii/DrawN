@@ -50,7 +50,7 @@ final class TicketPurchaseDialog {
             ComboBox<TicketType> category = new ComboBox<>(); category.getItems().setAll(available); category.setMaxWidth(Double.MAX_VALUE);
             category.setConverter(new StringConverter<>() {
                 @Override public String toString(TicketType type) {
-                    return type == null ? "" : type.name() + " • PHP " + money(type.price()) + " • " + type.remaining() + " left";
+                    return type == null ? "" : type.name() + " • ₱" + money(type.price()) + " • " + type.remaining() + " left";
                 }
                 @Override public TicketType fromString(String value) { return null; }
             });
@@ -64,12 +64,12 @@ final class TicketPurchaseDialog {
                 int max = Math.max(1, selected.remaining());
                 int current = quantity.getValueFactory() == null ? 1 : quantity.getValue();
                 quantity.setValueFactory(new SpinnerValueFactory.IntegerSpinnerValueFactory(1, max, Math.min(current, max)));
-                total.setText("Total: PHP " + money(selected.price().multiply(BigDecimal.valueOf(quantity.getValue()))));
+                total.setText("Total: ₱" + money(selected.price().multiply(BigDecimal.valueOf(quantity.getValue()))));
             };
             category.valueProperty().addListener((observable, oldValue, newValue) -> updateTotal.run());
             quantity.valueProperty().addListener((observable, oldValue, newValue) -> {
                 TicketType selected = category.getValue();
-                if (selected != null && newValue != null) total.setText("Total: PHP " + money(selected.price().multiply(BigDecimal.valueOf(newValue))));
+                if (selected != null && newValue != null) total.setText("Total: ₱" + money(selected.price().multiply(BigDecimal.valueOf(newValue))));
             });
             updateTotal.run();
 
@@ -94,8 +94,8 @@ final class TicketPurchaseDialog {
                 catch (RuntimeException ex) { error.setText("Enter a valid ticket quantity."); return; }
                 BigDecimal amount = selected.price().multiply(BigDecimal.valueOf(count));
                 Alert confirm = new Alert(Alert.AlertType.CONFIRMATION,
-                        selected.name() + " × " + count + "\nTotal: PHP " + money(amount)
-                                + "\nWallet balance: PHP " + money(session.account().getWalletBalance()));
+                        selected.name() + " × " + count + "\nTotal: ₱" + money(amount)
+                                + "\nWallet balance: ₱" + money(session.account().getWalletBalance()));
                 confirm.setTitle("Confirm ticket payment"); confirm.setHeaderText("Review your purchase");
                 if (confirm.showAndWait().orElse(ButtonType.CANCEL) != ButtonType.OK) return;
                 var submit = dialog.getDialogPane().lookupButton(checkout); submit.setDisable(true);

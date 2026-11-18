@@ -53,7 +53,7 @@ public final class Ui {
     static Label value(String text) { Label label = new Label(text); label.setWrapText(true); return label; }
 
     static String money(BigDecimal amount) { return amount == null ? "0.00" : amount.setScale(2).toPlainString(); }
-    static String php(BigDecimal amount) { return "PHP " + money(amount); }
+    static String php(BigDecimal amount) { return "₱" + money(amount); }
     static String label(Enum<?> value) { return value == null ? "" : value.name().replace('_', ' '); }
 
     static String message(Exception exception) {

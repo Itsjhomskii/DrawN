@@ -51,6 +51,7 @@ public final class MainShell {
     static final String TICKETS = "My Tickets";
     static final String WALLET = "Wallet & Transactions";
     static final String PROFILE = "My Profile";
+    static final String EVENT_DETAILS = "Event Details";
 
     private final DrawNApplication app;
     private final AppServices services;
@@ -64,7 +65,9 @@ public final class MainShell {
     private String activePage = "Home";
     private Button sidebarToggle;
     private CustomerMenuPages customerPages;
+    private TicketWalletPage ticketWallet;
     private Venue venueForRequest;
+    private Event eventForDetails;
     private boolean navigatingBack;
     private RadialFab radialFab;
 
@@ -74,6 +77,7 @@ public final class MainShell {
         root.getStyleClass().add("app-root");
         root.setLeft(sidebar);
         customerPages = new CustomerMenuPages(services, session, this::showPage, this::requestVenue, this::goBack);
+        ticketWallet = new TicketWalletPage(this);
         radialFab = new RadialFab(
                 () -> { showPage(EXPLORE); javafx.application.Platform.runLater(customerPages::focusJoinField); },
                 () -> showPage("Explore Venues"),
@@ -102,12 +106,18 @@ public final class MainShell {
         showPage(REQUEST_VENUE);
     }
 
+    void showMyEventDetails(Event event) {
+        eventForDetails = event;
+        showPage(EVENT_DETAILS);
+    }
+
     void goBack() {
         if (pageHistory.isEmpty()) {
             String fallback = switch (activePage) {
                 case "Venue Details" -> "Explore Venues";
                 case CREATE_EVENT -> MY_EVENTS;
                 case REQUEST_VENUE -> "Explore Venues";
+                case EVENT_DETAILS -> MY_EVENTS;
                 default -> HOME;
             };
             showBackFallback(fallback);
@@ -222,7 +232,8 @@ public final class MainShell {
         if (!name.equals(REQUEST_VENUE)) venueForRequest = null;
         activePage = name;
         navigation.values().forEach(button -> button.getStyleClass().remove("sidebar-item-active"));
-        Button active=navigation.get(name.equals("Venue Details") ? "Explore Venues" : name);
+        Button active=navigation.get(name.equals("Venue Details") ? "Explore Venues"
+                : name.equals(EVENT_DETAILS) ? MY_EVENTS : name);
         if(active!=null)active.getStyleClass().add("sidebar-item-active");
         if (name.equals("Home")) {
             centerLayer.getChildren().setAll(home(), radialFab);
@@ -240,10 +251,15 @@ public final class MainShell {
                 }
             } else if (name.equals(MY_EVENTS)) {
                 workflow = new MyEventsPage(this).view();
+            } else if (name.equals(EVENT_DETAILS)) {
+                workflow = eventForDetails == null ? new MyEventsPage(this).view()
+                        : new MyEventsPage(this).eventDetails(eventForDetails);
             } else if (name.equals(VENUES)) {
                 workflow = new VenueReservationsPage(this).view();
             } else if (name.equals(WALLET)) {
                 workflow = new WalletPage(this).view();
+            } else if (name.equals(TICKETS)) {
+                workflow = ticketWallet.view();
             } else {
                 workflow = customerPages.page(name);
             }
@@ -254,11 +270,11 @@ public final class MainShell {
     private Node home() {
         Label greeting=new Label("Welcome back, "+session.account().getFirstName()+"!");greeting.getStyleClass().add("page-title");
         Label message=new Label("Discover what's happening around you.");message.getStyleClass().add("secondary-text");
-        Button balance = new Button("Wallet balance: PHP " + money(session.account().getWalletBalance()), new DashboardIcon("fi fi-rr-wallet", 18));
+        Button balance = new Button("Wallet balance: ₱" + money(session.account().getWalletBalance()), new DashboardIcon("fi fi-rr-wallet", 18));
         balance.setId("home-wallet-balance");
         balance.getStyleClass().add("wallet-balance-button");
         balance.setTooltip(new Tooltip("Open Wallet & Transactions"));
-        balance.setAccessibleText("Wallet balance PHP " + money(session.account().getWalletBalance()) + ". Open Wallet and Transactions.");
+        balance.setAccessibleText("Wallet balance ₱" + money(session.account().getWalletBalance()) + ". Open Wallet and Transactions.");
         balance.setOnAction(event -> showPage("Wallet & Transactions"));
         HBox header=new HBox(12,new VBox(4,greeting,message),new Region(),balance);HboxGrow(header);header.getStyleClass().add("page-header");
         Node feed;
@@ -272,19 +288,20 @@ public final class MainShell {
         scroll.viewportBoundsProperty().addListener((o,old,bounds)->populateGrid(grid,events,bounds.getWidth()));populateGrid(grid,events,900);return scroll;
     }
     private void populateGrid(GridPane grid,List<Event> events,double width) {
-        int columns=width>=1050?3:width>=690?2:1;grid.getChildren().clear();grid.getColumnConstraints().clear();for(int i=0;i<columns;i++){ColumnConstraints c=new ColumnConstraints();c.setPercentWidth(100.0/columns);c.setHgrow(Priority.ALWAYS);grid.getColumnConstraints().add(c);}for(int i=0;i<events.size();i++)grid.add(eventCard(events.get(i)),i%columns,i/columns);
+        int columns=width>=620?2:1;grid.getChildren().clear();grid.getColumnConstraints().clear();for(int i=0;i<columns;i++){ColumnConstraints c=new ColumnConstraints();c.setPercentWidth(100.0/columns);c.setHgrow(Priority.ALWAYS);grid.getColumnConstraints().add(c);}for(int i=0;i<events.size();i++)grid.add(eventCard(events.get(i)),i%columns,i/columns);
     }
     private Node eventCard(Event event) {
         Label title=new Label(event.name());title.getStyleClass().add("event-card-title");title.setWrapText(true);
         String description=event.description().length()>130?event.description().substring(0,127)+"…":event.description();Label text=new Label(description);text.setWrapText(true);text.getStyleClass().add("secondary-text");
         Label details=new Label(CustomerText.words(event.type())+" • "+event.venue().name()+"\n"+event.date()+" • "+CustomerText.time(event.startTime())+"\n"+ticketSummary(event));details.setWrapText(true);details.getStyleClass().add("secondary-text");
-        Button view=new Button("View Details");view.getStyleClass().add("secondary-button");view.setOnAction(e->new EventDetailsView(event,services,session,()->showPage(activePage)).show());
-        VBox card=new VBox(12,title,details,text,new Region(),view);VBox.setVgrow(card.getChildren().get(3),Priority.ALWAYS);card.getStyleClass().add("event-card");card.setMaxWidth(Double.MAX_VALUE);return card;
+        Button view=new Button("View Details");view.getStyleClass().add("secondary-button");view.setMaxWidth(Double.MAX_VALUE);view.setOnAction(e->new EventDetailsView(event,services,session,()->showPage(activePage)).show());
+        HBox actions=new HBox(view);actions.getStyleClass().add("event-card-actions");HBox.setHgrow(view,Priority.ALWAYS);
+        VBox card=new VBox(12,title,details,text,new Region(),actions);VBox.setVgrow(card.getChildren().get(3),Priority.ALWAYS);card.getStyleClass().add("event-card");card.setMaxWidth(Double.MAX_VALUE);return card;
     }
     private Node emptyState(){Button create=new Button("Create New Event");create.getStyleClass().addAll("primary-button", "create-event-button");create.setOnAction(e->showPage(CREATE_EVENT));VBox box=new VBox(12,new Label("✦"),title("No published events yet."),subtitle("Be the first to bring an event to life with DrawN."),create);box.setAlignment(Pos.CENTER);box.getStyleClass().add("empty-state");return box;}
     private Node placeholder(String page){return new VBox(12,title(page),subtitle(page.equals("Create Event")?"Create Event is pending GUI migration. Use the console workflow to preserve approved-reservation and confirmation requirements.":"This customer workflow is pending GUI migration. No data or payment will be changed here."));}
     private Node errorState(String message){return new VBox(12,title("Unable to load events"),subtitle(message));}
-    private String ticketSummary(Event event){try{List<TicketType> types=services.publishing().ticketTypes(event.id());if(types.isEmpty())return "Free event";BigDecimal low=types.stream().map(TicketType::price).min(BigDecimal::compareTo).orElse(BigDecimal.ZERO);int remaining=types.stream().mapToInt(TicketType::remaining).sum();return "From PHP "+money(low)+" • "+remaining+" tickets available";}catch(Exception ignored){return "Ticket information unavailable";}}
+    private String ticketSummary(Event event){try{List<TicketType> types=services.publishing().ticketTypes(event.id());if(types.isEmpty())return "Free event";BigDecimal low=types.stream().map(TicketType::price).min(BigDecimal::compareTo).orElse(BigDecimal.ZERO);int remaining=types.stream().mapToInt(TicketType::remaining).sum();return "From ₱"+money(low)+" • "+remaining+" tickets available";}catch(Exception ignored){return "Ticket information unavailable";}}
     private static void HboxGrow(HBox box){for(Node node:box.getChildren())if(node instanceof Region region)HBox.setHgrow(region,Priority.ALWAYS);}
     private String initials(){String[] parts=session.customer().getName().trim().split("\\s+");return (parts[0].substring(0,1)+(parts.length>1?parts[parts.length-1].substring(0,1):"")).toUpperCase();}
     private String identifier(){return session.customer().getEmail()!=null?session.customer().getEmail():session.customer().getPhoneNumber();}

@@ -42,7 +42,7 @@ public final class RegisterView {
         countryCode.setVisible(false); countryCode.setManaged(false);
         contactInput.getChildren().add(1, countryCode);
         DatePicker dob = new DatePicker(); dob.setPromptText("Date of birth"); dob.getStyleClass().add("text-input");
-        TextField funding = AuthenticationFormSupport.textField("Minimum PHP 500");
+        TextField funding = AuthenticationFormSupport.textField("Minimum ₱500");
         ToggleGroup contactMethod = new ToggleGroup();
         DashboardIcon emailIcon = new DashboardIcon("fi fi-rs-check-circle", 18);
         DashboardIcon phoneIcon = new DashboardIcon("fi fi-rs-circle", 18);

@@ -31,7 +31,7 @@ import java.util.Locale;
 final class VenueReservationsPage {
     private static final DateTimeFormatter DATE = DateTimeFormatter.ofPattern("d MMMM yyyy", Locale.ENGLISH);
     private final MainShell shell;
-    private final VBox cards = new VBox(12);
+    private final FlowPane cards = new FlowPane(16, 16);
     private List<VenueReservation> reservations = List.of();
     private String filter = "All";
 
@@ -53,7 +53,7 @@ final class VenueReservationsPage {
         ToggleGroup group = new ToggleGroup();
         HBox filters = new HBox(8);
         filters.getStyleClass().add("reservation-filters");
-        for (String label : List.of("All", "Pending", "Approved", "Declined", "Cancelled", "Other")) {
+        for (String label : List.of("All", "Pending", "Approved", "Declined", "Cancelled")) {
             ToggleButton button = new ToggleButton(label);
             button.setToggleGroup(group);
             button.setId("reservation-filter-" + label.toLowerCase(Locale.ROOT));
@@ -63,7 +63,10 @@ final class VenueReservationsPage {
             if (label.equals(filter)) button.setSelected(true);
         }
         cards.getStyleClass().add("reservation-list");
+        cards.setMaxWidth(Double.MAX_VALUE);
+        cards.widthProperty().addListener((observable, oldWidth, newWidth) -> resizeCards());
         refresh();
+        resizeCards();
         return Ui.page("Venue Reservations", "Manage your bookings and track their approval status.", headingActions, filters, cards);
     }
 
@@ -74,15 +77,26 @@ final class VenueReservationsPage {
             return;
         }
         cards.getChildren().setAll(visible.stream().map(this::reservationCard).toList());
+        resizeCards();
+    }
+
+    private void resizeCards() {
+        double width = cards.getWidth();
+        if (width <= 0) return;
+        int columns = width >= 560 ? 2 : 1;
+        double cardWidth = Math.max(220, (width - (columns - 1) * cards.getHgap() - 8) / columns);
+        cards.getChildren().stream().filter(node -> node instanceof VBox box
+                        && box.getStyleClass().contains("reservation-card"))
+                .map(VBox.class::cast).forEach(card -> card.setPrefWidth(cardWidth));
     }
 
     private boolean matches(VenueReservation reservation) {
         return switch (filter) {
-            case "Pending" -> reservation.status() == BookingStatus.PENDING || reservation.status() == BookingStatus.PENDING_PAYMENT;
+            case "Pending" -> reservation.status() == BookingStatus.PENDING || reservation.status() == BookingStatus.PENDING_PAYMENT
+                    || reservation.status() == BookingStatus.RESERVED;
             case "Approved" -> reservation.status() == BookingStatus.APPROVED || reservation.status() == BookingStatus.CONFIRMED;
             case "Declined" -> reservation.status() == BookingStatus.DECLINED;
             case "Cancelled" -> reservation.status() == BookingStatus.CANCELLED || reservation.status() == BookingStatus.EXPIRED;
-            case "Other" -> reservation.status() == BookingStatus.RESERVED;
             default -> true;
         };
     }
@@ -96,7 +110,8 @@ final class VenueReservationsPage {
                 + "–" + CustomerText.time(reservation.endTime()));
         Label total = new Label(Ui.php(reservation.cost()));
         total.getStyleClass().add("reservation-total");
-        HBox badges = new HBox(8, badge(CustomerText.words(reservation.status()), reservationStatusClass(reservation.status())),
+        String shownStatus = CustomerText.bookingStatus(reservation.status());
+        HBox badges = new HBox(8, badge(shownStatus, reservationStatusClass(reservation.status())),
                 badge(CustomerText.words(reservation.paymentStatus()), "payment-status"));
         if (linked != null) badges.getChildren().add(badge("Linked event · " + CustomerText.words(linked.approvalStatus()),
                 linked.approvalStatus() == EventApprovalStatus.PUBLISHED ? "status-approved" : "status-neutral"));
@@ -104,10 +119,15 @@ final class VenueReservationsPage {
         Label linkedName = reservation.eventId().isBlank() ? null : Ui.muted("Related event  •  "
                 + (linked == null ? reservation.eventId() : linked.name()));
         HBox actions = new HBox(8, Ui.secondary("View Details", () -> showDetails(reservation, linked)));
+        actions.getStyleClass().add("event-card-actions");
         if (canCancel(reservation)) {
             Button cancel = Ui.danger("Cancel Reservation", () -> cancel(reservation));
             cancel.setId("cancel-reservation");
             actions.getChildren().add(cancel);
+        }
+        for (Node action : actions.getChildren()) if (action instanceof Button button) {
+            HBox.setHgrow(button, Priority.ALWAYS);
+            button.setMaxWidth(Double.MAX_VALUE);
         }
         card.getChildren().addAll(name, schedule, new HBox(Ui.grow(), total), badges);
         if (linkedName != null) card.getChildren().add(linkedName);
@@ -142,7 +162,7 @@ final class VenueReservationsPage {
                 "Total fee", Ui.php(reservation.cost()),
                 "Pricing", CustomerWorkflowService.reservationCostExplanation(reservation),
                 "Wallet payment", CustomerText.words(reservation.paymentStatus()),
-                "Reservation status", CustomerText.words(reservation.status())));
+                "Reservation status", CustomerText.bookingStatus(reservation.status())));
         if (!reservation.declineReason().isBlank()) content.add(Ui.muted("Administrator's reason  •  " + reservation.declineReason()));
         if (!reservation.eventId().isBlank()) content.add(Ui.muted("Related event  •  "
                 + (linked == null ? reservation.eventId() : linked.name())
@@ -207,11 +227,10 @@ final class VenueReservationsPage {
 
     private static String reservationStatusClass(BookingStatus status) {
         return switch (status) {
-            case PENDING, PENDING_PAYMENT -> "status-pending";
+            case PENDING, PENDING_PAYMENT, RESERVED -> "status-pending";
             case APPROVED, CONFIRMED -> "status-approved";
             case DECLINED -> "status-declined";
             case CANCELLED, EXPIRED -> "status-cancelled";
-            case RESERVED -> "status-neutral";
         };
     }
 }

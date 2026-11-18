@@ -54,6 +54,9 @@
     -fx-padding: 8 12;
 }
 .secondary-button:hover { -fx-background-color: #F7F8F7; }
+.primary-button, .secondary-button, .danger-button { -fx-min-height: 40; -fx-min-width: 132; }
+.danger-button { -fx-background-color: #FFF7F6; -fx-text-fill: #8C3833; -fx-border-color: #E3C6C3; -fx-padding: 8 12; }
+.danger-button:hover { -fx-background-color: #FCEDEA; }
 .hyperlink { -fx-text-fill: #202622; -fx-underline: true; }
 .hyperlink:hover { -fx-text-fill: #557A61; }
 .hyperlink:focused { -fx-border-color: #557A61; -fx-border-radius: 3; }
@@ -259,10 +262,43 @@
     -fx-min-height: 230;
 }
 .event-card-title { -fx-font-size: 18px; -fx-font-weight: 700; -fx-text-fill: #202622; }
-.explore-event-search-row { -fx-alignment: center-left; -fx-padding: 10 0; }
+.explore-event-search-row { -fx-alignment: center-left; -fx-padding: 2 0 0 0; }
+.event-search { -fx-pref-height: 42; -fx-background-radius: 10; -fx-border-radius: 10; }
+.event-category-filters { -fx-alignment: center-left; -fx-padding: 0 0 4 0; }
+.event-filter {
+    -fx-min-width: 0;
+    -fx-min-height: 36;
+    -fx-pref-height: 36;
+    -fx-padding: 7 16;
+    -fx-background-color: #F7F8F7;
+    -fx-text-fill: #34433A;
+    -fx-border-color: #E1E7E2;
+    -fx-border-radius: 18;
+    -fx-background-radius: 18;
+}
+.event-filter:selected { -fx-background-color: #DDE9DE; -fx-border-color: #DDE9DE; -fx-text-fill: #1B3028; -fx-font-weight: 700; }
+.event-count-pill { -fx-padding: 3 10; -fx-background-color: #DDE9DE; -fx-background-radius: 14; -fx-text-fill: #355642; -fx-font-weight: 700; }
+.private-invitation-panel { -fx-padding: 14 16; -fx-spacing: 8; -fx-background-color: #F4F6F4; -fx-background-radius: 12; -fx-border-color: #E1E7E2; -fx-border-radius: 12; }
+.private-invitation-panel .primary-button { -fx-min-width: 132; }
+.event-grid { -fx-padding: 4 0 12 0; }
+.event-card-actions .button, .venue-card-actions .button {
+    -fx-min-width: 0;
+    -fx-min-height: 40;
+    -fx-pref-height: 40;
+    -fx-padding: 8 10;
+}
 .event-owner-section { -fx-padding: 14; -fx-background-color: #F7F8F7; -fx-background-radius: 12; -fx-border-color: #E4E8E4; -fx-border-radius: 12; }
 .profile-avatar { -fx-min-width: 58; -fx-min-height: 58; -fx-alignment: center; -fx-background-color: #E5EEE5; -fx-background-radius: 29; -fx-text-fill: #355642; -fx-font-size: 20px; -fx-font-weight: 700; }
 .profile-card { -fx-padding: 22; -fx-background-color: #FFFFFF; -fx-background-radius: 12; -fx-border-color: #E4E8E4; -fx-border-radius: 12; }
+.profile-hero-card { -fx-background-color: #FFFFFF; -fx-background-radius: 14; -fx-border-color: #E4E8E4; -fx-border-radius: 14; }
+.profile-banner { -fx-min-height: 190; -fx-pref-height: 190; -fx-background-radius: 14 14 0 0; -fx-background-color: linear-gradient(to right, #D9E2F3, #E6E2F3 48%, #D7E8E4); }
+.profile-hero-content { -fx-padding: 18 24 22 24; -fx-min-height: 116; }
+.profile-avatar { -fx-min-width: 76; -fx-min-height: 76; -fx-pref-width: 76; -fx-pref-height: 76; -fx-background-radius: 40; -fx-border-color: #FFFFFF; -fx-border-width: 5; -fx-border-radius: 40; -fx-effect: dropshadow(gaussian, rgba(32,38,34,0.12), 8, 0.08, 0, 2); }
+.profile-stat-value { -fx-font-size: 20px; -fx-font-weight: 700; }
+.profile-stat-label { -fx-font-size: 11px; -fx-text-fill: #78837C; }
+.profile-tabs { -fx-padding: 12 20; -fx-background-color: #E7E7FB; -fx-background-radius: 10; }
+.profile-tab { -fx-padding: 4 10; -fx-text-fill: #46504B; }
+.profile-tab-active { -fx-text-fill: #5B5CE2; -fx-font-weight: 700; -fx-border-color: transparent transparent #5B5CE2 transparent; -fx-border-width: 0 0 2 0; }
 .create-event-button {
     -fx-background-color: #E5EEE5;
     -fx-text-fill: #355642;
@@ -314,7 +350,57 @@
 .venue-category { -fx-text-fill: #66776C; -fx-font-size: 11px; -fx-font-weight: 700; }
 .venue-card .event-card-title, .venue-detail-page .page-title { -fx-text-fill: #101D19; }
 .venue-card-actions { -fx-padding: 4 0 0 0; }
-.venue-card-actions .button { -fx-min-height: 38; }
+.venue-card-actions .button { -fx-min-height: 40; }
+.organizer-summary-grid { -fx-alignment: center-left; }
+.organizer-summary-card {
+    -fx-padding: 12 16;
+    -fx-min-height: 76;
+    -fx-background-color: #FFFFFF;
+    -fx-background-radius: 12;
+    -fx-border-color: #E1E7E2;
+    -fx-border-radius: 12;
+    -fx-effect: dropshadow(gaussian, rgba(16,29,25,0.035), 8, 0.06, 0, 2);
+}
+.organizer-summary-label { -fx-font-size: 12px; -fx-text-fill: #66776C; }
+.organizer-summary-value { -fx-font-size: 25px; -fx-font-weight: 700; -fx-text-fill: #101D19; }
+.organizer-summary-content .nav-icon-shape { -fx-stroke: #667F6D; -fx-stroke-width: 1.8; }
+.organizer-event-card { -fx-min-height: 0; -fx-padding: 14; -fx-spacing: 7; }
+.organizer-event-card .danger-button, .organizer-event-detail .danger-button {
+    -fx-background-color: #FFFFFF;
+    -fx-text-fill: #202622;
+    -fx-border-color: #C9D0CA;
+}
+.organizer-event-card .danger-button:hover, .organizer-event-detail .danger-button:hover { -fx-background-color: #F7F8F7; }
+.organizer-event-card .organizer-event-image {
+    -fx-min-height: 96;
+    -fx-pref-height: 96;
+    -fx-max-height: 96;
+    -fx-background-color: #F1EAE3;
+}
+.organizer-event-image .nav-icon-shape, .organizer-event-detail-image .nav-icon-shape,
+.ready-reservation-image .nav-icon-shape { -fx-stroke: #667F6D; -fx-stroke-width: 1.8; }
+.organizer-event-card .event-card-title { -fx-font-size: 16px; }
+.organizer-event-card .reservation-status { -fx-padding: 4 10; }
+.ready-to-organize-section {
+    -fx-spacing: 8;
+    -fx-padding: 16;
+    -fx-background-color: #F4F6F4;
+    -fx-background-radius: 12;
+    -fx-border-color: #E5EAE6;
+    -fx-border-radius: 12;
+}
+.ready-reservation-list { -fx-padding: 2 0 0 0; }
+.ready-reservation-card {
+    -fx-padding: 10 12;
+    -fx-background-color: #FFFFFF;
+    -fx-background-radius: 10;
+    -fx-border-color: #E1E7E2;
+    -fx-border-radius: 10;
+    -fx-effect: dropshadow(gaussian, rgba(16,29,25,0.03), 7, 0.05, 0, 2);
+}
+.ready-reservation-image { -fx-min-width: 64; -fx-pref-width: 64; -fx-max-width: 64; -fx-min-height: 64; -fx-pref-height: 64; -fx-max-height: 64; }
+.organizer-empty-state { -fx-background-color: #FFFFFF; -fx-border-color: #E1E7E2; -fx-border-radius: 12; -fx-background-radius: 12; -fx-padding: 24; }
+.organizer-event-detail-image { -fx-min-height: 230; -fx-pref-height: 300; -fx-max-height: 420; }
 .venue-detail-layout { -fx-alignment: top-left; -fx-padding: 0; }
 .venue-detail-left { -fx-spacing: 12; -fx-padding: 0 0 12 0; }
 .venue-detail-left .event-card-title { -fx-font-size: 27px; -fx-text-fill: #101D19; }
@@ -437,7 +523,8 @@
 .wallet-activity-row { -fx-padding: 3 0; }
 .wallet-activity-label { -fx-text-fill: #66776C; -fx-font-size: 12px; }
 .wallet-activity-date { -fx-text-fill: #66776C; -fx-font-size: 11px; }
-.wallet-activity-icon { -fx-text-fill: #1B3028; -fx-font-size: 14px; }
+.wallet-activity-icon { -fx-background-color: #E9EEE8; -fx-background-radius: 8; -fx-alignment: center; -fx-padding: 4; }
+.wallet-activity-icon .nav-icon-shape, .financial-summary-heading .nav-icon-shape, .transaction-row-icon .nav-icon-shape { -fx-stroke: #1B3028; -fx-stroke-width: 1.8; }
 .wallet-summary-grid { -fx-alignment: top-left; }
 .financial-summary-card {
     -fx-padding: 13;
@@ -449,7 +536,7 @@
     -fx-min-height: 84;
 }
 .financial-summary-heading { -fx-alignment: center-left; -fx-spacing: 8; -fx-text-fill: #66776C; -fx-font-size: 10px; }
-.financial-summary-heading .label:first-child { -fx-text-fill: #1B3028; -fx-font-size: 14px; }
+.financial-summary-heading .label { -fx-text-fill: #1B3028; -fx-font-size: 14px; }
 .financial-summary-value { -fx-text-fill: #101D19; -fx-font-size: 13px; -fx-font-weight: 700; }
 .transaction-history-panel {
     -fx-padding: 14;
@@ -507,7 +594,7 @@
 .booking-summary { -fx-background-color: #FFFFFF; }
 .booking-summary .section-title { -fx-text-fill: #101D19; }
 .booking-balance { -fx-font-size: 20px; -fx-font-weight: 700; -fx-text-fill: #1B3028; }
-.reservation-list { -fx-spacing: 12; }
+.reservation-list { -fx-padding: 4 0 12 0; }
 .reservation-card {
     -fx-background-color: #FFFFFF;
     -fx-border-color: #E1E7E2;
@@ -517,6 +604,45 @@
 }
 .reservation-card .section-title { -fx-text-fill: #101D19; }
 .reservation-total { -fx-font-size: 18px; -fx-font-weight: 700; -fx-text-fill: #101D19; }
+.ticket-filters { -fx-alignment: center-left; -fx-padding: 2 0 4 0; }
+.ticket-filter { -fx-min-width: 0; -fx-background-color: #F1F3F1; -fx-border-color: transparent; -fx-border-radius: 18; -fx-background-radius: 18; -fx-padding: 8 16; }
+.ticket-filter:selected { -fx-background-color: #D5E5D6; -fx-text-fill: #1B3028; -fx-font-weight: 700; }
+.digital-ticket-grid { -fx-padding: 2 0 12 0; }
+.digital-ticket-card {
+    -fx-alignment: center-left;
+    -fx-spacing: 14;
+    -fx-padding: 14;
+    -fx-min-height: 206;
+    -fx-background-color: #FFFFFF;
+    -fx-background-radius: 14;
+    -fx-border-color: #E1E7E2;
+    -fx-border-radius: 14;
+    -fx-effect: dropshadow(gaussian, rgba(16,29,25,0.045), 9, 0.06, 0, 2);
+}
+.digital-ticket-image-placeholder { -fx-min-width: 104; -fx-pref-width: 104; -fx-max-width: 104; -fx-min-height: 172; -fx-background-color: #F1EAE3; -fx-background-radius: 10; -fx-text-fill: #66776C; -fx-font-size: 11px; -fx-alignment: center; }
+.digital-ticket-image-placeholder .nav-icon-shape, .ticket-empty-state .nav-icon-shape { -fx-stroke: #667F6D; -fx-stroke-width: 1.7; }
+.digital-ticket-content { -fx-spacing: 8; }
+.ticket-event-title { -fx-font-size: 18px; -fx-font-weight: 700; -fx-text-fill: #101D19; }
+.ticket-category { -fx-font-size: 10px; -fx-font-weight: 700; -fx-text-fill: #66776C; }
+.ticket-field-label { -fx-font-size: 9px; -fx-text-fill: #66776C; }
+.ticket-field-value { -fx-font-size: 12px; -fx-font-weight: 700; -fx-text-fill: #101D19; }
+.ticket-fields-row { -fx-spacing: 14; -fx-padding: 1 0; }
+.ticket-fields-row > .vbox { -fx-border-color: transparent #E1E7E2 transparent transparent; -fx-border-width: 0 1 0 0; -fx-padding: 0 12 0 0; }
+.ticket-amount { -fx-font-size: 16px; -fx-font-weight: 700; -fx-text-fill: #101D19; }
+.ticket-reference { -fx-font-size: 9px; -fx-text-fill: #66776C; -fx-wrap-text: true; }
+.ticket-view-button { -fx-min-width: 104; -fx-padding: 8 12; }
+.ticket-status { -fx-padding: 5 10; -fx-background-radius: 14; -fx-font-size: 10px; -fx-font-weight: 700; }
+.ticket-status-active { -fx-background-color: #E0F0DC; -fx-text-fill: #28613B; }
+.ticket-status-past { -fx-background-color: #EEF0EE; -fx-text-fill: #66776C; }
+.ticket-status-cancelled { -fx-background-color: #F8E7E5; -fx-text-fill: #9B443E; }
+.ticket-status-refunded { -fx-background-color: #F5EBD8; -fx-text-fill: #76572A; }
+.ticket-status-pending { -fx-background-color: #F5EBD8; -fx-text-fill: #76572A; }
+.ticket-empty-state { -fx-alignment: center; -fx-spacing: 12; -fx-padding: 32; -fx-min-height: 230; -fx-background-color: #F6F8F6; -fx-background-radius: 14; -fx-border-color: #E1E7E2; -fx-border-radius: 14; }
+.ticket-details-ticket, .ticket-details-panel { -fx-spacing: 14; -fx-padding: 20; -fx-background-color: #FFFFFF; -fx-background-radius: 14; -fx-border-color: #E1E7E2; -fx-border-radius: 14; }
+.ticket-details-ticket .page-title { -fx-text-fill: #101D19; }
+.ticket-details-panel { -fx-background-color: #F6F8F6; }
+.ticket-details-layout { -fx-padding: 4 0 12 0; }
+.digital-ticket-divider { -fx-min-height: 1; -fx-max-height: 1; -fx-border-color: #CBD4CD transparent transparent transparent; -fx-border-style: segments(5, 4); -fx-border-width: 1 0 0 0; }
 .reservation-status {
     -fx-padding: 5 9;
     -fx-background-radius: 14;

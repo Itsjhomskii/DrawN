@@ -92,6 +92,7 @@ final class VenueRequestPage {
         var pay = Ui.primary("Review & Pay", this::submit);
         pay.setId("venue-pay");
         HBox backCrumb = new HBox(8, BackNavigation.button(() -> shell.goBack("Explore Venues")), Ui.muted("Explore Venues  ›  Request a Venue"));
+        backCrumb.setAlignment(javafx.geometry.Pos.CENTER_LEFT);
         return Ui.page("Request a Venue", "Choose your schedule, review the full cost, and confirm wallet payment.",
                 backCrumb, selected, schedule, priceSummary, payment, Ui.actions(pay));
     }

@@ -128,7 +128,7 @@ final class EditEventDialog {
     private final class TicketRow {
         private final TicketType original;
         private final TextField name = Ui.field("Category");
-        private final TextField price = Ui.field("Price PHP");
+        private final TextField price = Ui.field("Price ₱");
         private final TextField quantity = Ui.field("Quantity");
         private final TextField open = Ui.field("Sales open YYYY-MM-DD HH:mm");
         private final TextField close = Ui.field("Sales close YYYY-MM-DD HH:mm");
