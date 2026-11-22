@@ -49,6 +49,11 @@ final class PasswordInput extends HBox {
 
     String text() { return maskedField.getText(); }
 
+    void setInputId(String id) {
+        maskedField.setId(id);
+        visibleField.setId(id + "-visible");
+    }
+
     void focusInput() {
         (visibleField.isVisible() ? visibleField : maskedField).requestFocus();
     }

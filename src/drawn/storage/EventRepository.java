@@ -199,9 +199,7 @@ public final class EventRepository {
     }
 
     private static void writeRecords(Path file, List<String> lines) throws IOException {
-        Path parent = file.getParent();
-        if (parent != null) Files.createDirectories(parent);
-        Files.write(file, lines, StandardCharsets.UTF_8);
+        AtomicCsvFile.write(file, lines);
     }
 
     private static void restore(Path file, List<String> content) throws IOException {

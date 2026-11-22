@@ -74,7 +74,8 @@ public final class AppServices {
             throw new UncheckedIOException("DrawN could not load its venue list.", ex);
         }
         adminDashboard = new AdminDashboardService(reservations, eventRepository, ticketRepository, paymentRepository,
-                accounts, journal, CommissionPolicy.configured(), new AdminAuditLog(dataDirectory, Clock.systemDefaultZone()), events);
+                accounts, journal, CommissionPolicy.configured(), new AdminAuditLog(dataDirectory, Clock.systemDefaultZone()),
+                events, venueExtensions);
     }
 
     public void recoverPending() throws IOException {

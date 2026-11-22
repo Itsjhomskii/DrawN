@@ -1,6 +1,8 @@
 package drawn.service.admin;
 
 import drawn.model.event.Event;
+import drawn.model.event.ExtensionRequestStatus;
+import drawn.model.event.VenueExtensionRequest;
 import drawn.model.event.VenueReservation;
 import drawn.model.payment.PaymentPurpose;
 import drawn.model.payment.PaymentStatus;
@@ -9,6 +11,7 @@ import drawn.model.ticket.TicketPurchaseStatus;
 import drawn.model.ticket.TicketType;
 import drawn.service.event.EventService;
 import drawn.service.event.ReservationService;
+import drawn.service.event.VenueExtensionService;
 import drawn.service.payment.CommissionPolicy;
 import drawn.storage.AccountStore;
 import drawn.storage.EventRepository;
@@ -46,13 +49,16 @@ public final class AdminDashboardService {
     private final CommissionPolicy commission;
     private final AdminAuditLog audit;
     private final EventService eventService;
+    private final VenueExtensionService extensions;
 
     public AdminDashboardService(ReservationService reservations, EventRepository events, TicketRepository tickets,
                                  PaymentRepository payments, AccountStore accounts, TransactionJournal journal,
-                                 CommissionPolicy commission, AdminAuditLog audit, EventService eventService) {
+                                 CommissionPolicy commission, AdminAuditLog audit, EventService eventService,
+                                 VenueExtensionService extensions) {
         this.reservations = reservations; this.events = events; this.tickets = tickets;
         this.payments = payments; this.accounts = accounts; this.journal = journal;
         this.commission = commission; this.audit = audit; this.eventService = eventService;
+        this.extensions = extensions;
     }
 
     // ---------------------------------------------------------------- read models
@@ -77,6 +83,11 @@ public final class AdminDashboardService {
 
     public record PendingEvent(String eventId, String name, String organizerId, String organizerName,
                                java.time.LocalDate date, String venueName) { }
+
+    public record PendingExtension(String requestId, String reservationId, String eventName, String customerName, String venueName,
+                                   java.time.LocalDate date, java.time.LocalTime startTime,
+                                   java.time.LocalTime currentEndTime, java.time.LocalTime requestedEndTime,
+                                   BigDecimal estimatedAdditionalCost, ExtensionRequestStatus status) { }
 
     public record RevenueSummary(BigDecimal venueRevenue, BigDecimal ticketGross, BigDecimal platformCommission,
                                  BigDecimal refunds) { }
@@ -118,6 +129,38 @@ public final class AdminDashboardService {
     public VenueReservation decline(String adminId, String reservationId, String reason) throws IOException {
         VenueReservation declined = reservations.decline(reservationId, reason);
         audit.record(adminId, "DECLINE_RESERVATION", reservationId, reason);
+        return declined;
+    }
+
+    public List<Event> allEvents() throws IOException {
+        return events.findAll();
+    }
+
+    public List<PendingExtension> pendingExtensions() throws IOException {
+        Map<String, String> names = customerNames();
+        Map<String, Event> eventById = eventsById();
+        List<PendingExtension> result = new ArrayList<>();
+        for (VenueExtensionRequest request : extensions.pendingRequests()) {
+            VenueReservation reservation = reservations.find(request.reservationId());
+            Event event = eventById.get(request.eventId());
+            result.add(new PendingExtension(request.id(), request.reservationId(), event == null ? "(missing event)" : event.name(),
+                    names.getOrDefault(request.organizerId(), request.organizerId()), reservation.venueName(),
+                    reservation.date(), reservation.startTime(), reservation.endTime(), request.requestedEndTime(),
+                    request.additionalCost(), request.status()));
+        }
+        return List.copyOf(result);
+    }
+
+    public VenueExtensionRequest approveExtension(String adminId, String requestId) throws IOException {
+        VenueExtensionRequest approved = extensions.approve(requestId);
+        audit.record(adminId, "APPROVE_EXTENSION", requestId,
+                approved.eventId() + " through " + approved.requestedEndTime() + "; no extension payment collected");
+        return approved;
+    }
+
+    public VenueExtensionRequest declineExtension(String adminId, String requestId, String reason) throws IOException {
+        VenueExtensionRequest declined = extensions.decline(requestId, reason);
+        audit.record(adminId, "DECLINE_EXTENSION", requestId, reason);
         return declined;
     }
 

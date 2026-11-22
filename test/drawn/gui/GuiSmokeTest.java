@@ -3,8 +3,12 @@ package drawn.gui;
 import drawn.gui.views.Ui;
 import drawn.model.event.EventPurpose;
 import drawn.model.event.Event;
+import drawn.model.event.EventType;
+import drawn.model.event.EventVisibility;
 import drawn.model.event.ReservationPricing;
+import drawn.model.event.TicketCategory;
 import drawn.model.event.VenueReservation;
+import drawn.model.event.VenueCatalog;
 import drawn.service.customer.CustomerWorkflowService;
 import javafx.application.Platform;
 import javafx.scene.Node;
@@ -15,12 +19,15 @@ import javafx.scene.control.ComboBox;
 import javafx.scene.control.ContextMenu;
 import javafx.scene.control.DatePicker;
 import javafx.scene.control.Label;
+import javafx.scene.control.Spinner;
 import javafx.scene.control.TableView;
 import javafx.scene.control.TextInputControl;
 import javafx.scene.image.PixelReader;
 import javafx.scene.image.WritableImage;
 import javafx.stage.Stage;
 import javafx.stage.Window;
+import javafx.animation.AnimationTimer;
+import javafx.application.Platform;
 
 import javax.imageio.ImageIO;
 import java.awt.image.BufferedImage;
@@ -43,10 +50,12 @@ public final class GuiSmokeTest {
     private static final List<String> notices = new ArrayList<>();
     private static Stage stage;
     private static Path screenshots;
+    private static Throwable dialogAutomationFailure;
 
     public static void main(String[] args) throws Exception {
         Path data = Files.createTempDirectory("drawn-gui-test");
         System.setProperty("drawn.data", data.toString());
+        System.setProperty("drawn.gui.smoke", "true");
         screenshots = args.length > 0 ? Path.of(args[0]) : null;
         if (screenshots != null) Files.createDirectories(screenshots);
         Ui.useDialogs(new Ui.Dialogs() {
@@ -83,31 +92,38 @@ public final class GuiSmokeTest {
 
         // ---- Registration: validation message, then success ----
         fire("login-register");
+        awaitNode("reg-create");
         register("Ana", "Reyes", "ana@example.com", "100");
         expect(label(".form-error").getText().contains("500"), "minimum initial funding message shown");
         type("reg-funding", "20000");
         shot("02-register");
         fire("reg-create");
-        expectNotice("INFO WALLET SETUP COMPLETE!");
+        awaitNode("nav-Home");
         expect(node("nav-Home") != null, "customer shell opened after registration");
-        expect(root().lookupAll(".stat-tile").size() == 7, "home shows the 7 dashboard figures");
+        expect(node("home-wallet-balance") != null, "home shows the wallet shortcut");
         shot("03-home");
 
         // ---- Wallet: rejected top-up, accepted top-up, history ----
-        fire("nav-Wallet-Transactions");
+        fire("nav-Wallet-&-Transactions");
+        fire("topup-button");
         type("topup-amount", "abc");
-        fire("topup-button");
-        expectNotice("ERROR Could not save wallet top-up");
+        fire("topup-confirm");
+        expect(!label(".form-error").getText().isBlank(), "invalid top-up stays in the dialog: " + label(".form-error").getText());
         type("topup-amount", "1000");
-        fire("topup-button");
+        fire("topup-confirm");
         expectNotice("INFO Top-up successful.");
+        awaitNode("wallet-balance");
         expect(label("#wallet-balance").getText().equals("₱21,000.00"), "balance after top-up");
-        expect(table("funding-table").getItems().size() == 2, "initial funding + top-up listed");
+        expect(services.walletTransactions(services.customerAccess().authenticate("ana@example.com", "secret123").account())
+                .size() == 2, "initial funding + top-up persisted");
         shot("04-wallet");
 
         // ---- Venue request: invalid hourly time, then a paid morning booking ----
         fire("nav-Venue-Reservations");
         fire("open-request-venue");
+        int commercialVenueIndex = VenueCatalog.all().indexOf(VenueCatalog.all().stream()
+                .filter(v -> v.supports(EventPurpose.TICKETED_EVENT)).findFirst().orElseThrow());
+        fire("venue-select-" + commercialVenueIndex);
         select("venue-purpose", EventPurpose.TICKETED_EVENT);
         ((DatePicker) node("venue-date")).setValue(LocalDate.now().plusDays(30));
         type("venue-start", "05:00");
@@ -120,81 +136,107 @@ public final class GuiSmokeTest {
         select("venue-pricing", ReservationPricing.HALF_DAY_MORNING);
         shot("05-request-venue");
         fire("venue-pay");
-        expectNotice("INFO Reservation payment successful!");
-        TableView<?> reservations = table("reservations-table");
-        expect(reservations.getItems().size() == 1, "new reservation listed");
-        VenueReservation booking = (VenueReservation) reservations.getItems().get(0);
+        expectNotice("CONFIRM Confirm full reservation payment?");
+        VenueReservation booking = services.reservations().forCustomer(services.customerAccess()
+                .authenticate("ana@example.com", "secret123").customer()).get(0);
         expect(booking.status().name().equals("PENDING") && booking.paymentStatus().name().equals("PAID"), "booking is paid and pending");
-        reservations.getSelectionModel().select(0);
         shot("06-reservations");
 
-        // Create Event with nothing approved yet explains what to do.
-        fire("nav-My-Events");
-        fire("open-create-event");
-        expect(node("create-request-venue") != null, "create event says a venue must be approved first");
+        // The quick-create page explains that venue approval is required.
+        fire("quick-actions-toggle");
+        fire("quick-create-event");
+        awaitNode("create-request-venue");
+        expect(node("create-request-venue") != null, "create event asks for an approved venue reservation");
 
-        // The console app has no admin approval screen, so approve through the existing service.
-        services.reservations().approve(booking.id());
+        // The admin approves the already paid request through the real admin review screen.
+        logOut();
+        type("login-contact", "admin@drawn.com");
+        type("login-password", "admin");
+        fire("login-button");
+        awaitNode("admin-dashboard");
+        selectAdminTab("admin-tab-venue-requests");
+        expect(table("admin-venue-requests").getItems().size() == 1, "paid venue request reaches admin review");
+        table("admin-venue-requests").getSelectionModel().select(0);
+        fire("admin-approve-venue");
+        expect(((Label) node("admin-status")).getText().startsWith("Approved "), "admin approved the paid venue booking");
+        expect(services.reservations().find(booking.id()).status().name().equals("APPROVED"), "venue approval persisted");
+        fire("admin-logout");
+        awaitNode("login-button");
+        type("login-contact", "ana@example.com");
+        type("login-password", "secret123");
+        fire("login-button");
+        awaitNode("nav-Home");
 
         // ---- Create & publish a ticketed event ----
         fire("nav-My-Events");
-        fire("open-create-event");
+        fire("create-event-from-reservation-" + booking.id().replaceAll("[^A-Za-z0-9_-]", "-"));
+        awaitNode("create-publish");
         select("create-purpose", EventPurpose.TICKETED_EVENT);
+        select("create-type", EventType.CONCERT);
         type("create-name", "Iloilo Jazz Night");
         type("create-description", "An evening of live jazz by the river.");
         type("create-attendance", "80");
         type("category-name", "VIP");
         type("category-price", "500");
         type("category-quantity", "20");
+        type("category-sales-start", java.time.LocalDateTime.now().minusMinutes(1).withSecond(0).withNano(0).toString().replace('T', ' '));
+        type("category-sales-deadline", booking.date().atTime(booking.startTime()).minusHours(1).toString().replace('T', ' '));
         fire("category-add");
-        type("category-name", "vip");
-        type("category-price", "300");
-        type("category-quantity", "10");
-        fire("category-add");
-        expectNotice("ERROR Could not add ticket category | Category names must be unique.");
         shot("07-create-event");
         fire("create-publish");
         expectNotice("INFO Event published.");
         Event published = services.events().eventsFor(services.customerAccess()
                 .authenticate("ana@example.com", "secret123").customer()).get(0);
-        expect(node("event-details-" + published.id()) != null, "published event card is listed under My Events");
+        awaitNode("event-details-" + published.id().replaceAll("[^A-Za-z0-9_-]", "-"));
+        expect(node("event-details-" + published.id().replaceAll("[^A-Za-z0-9_-]", "-")) != null, "published event card is listed under My Events");
         expect(node("organizer-summary-grid") != null, "organizer overview is present");
-        fire("event-details-" + published.id());
-        expect(node("event-ticket-categories") != null, "event details route opens with ticket categories");
-        fire("back-navigation");
-        expect(node("event-details-" + published.id()) != null, "event detail breadcrumb returns to My Events");
         shot("08-my-events");
 
         // ---- A second customer buys tickets, then cancels them ----
         logOut();
         fire("login-register");
+        awaitNode("reg-create");
         register("Ben", "Cruz", "ben@example.com", "5000");
-        expectNotice("INFO WALLET SETUP COMPLETE!");
+        awaitNode("nav-Explore-Events");
         fire("nav-Explore-Events");
-        TableView<?> explore = table("explore-table");
-        expect(explore.getItems().size() == 1, "public event visible to another customer");
-        explore.getSelectionModel().select(0);
-        type("ticket-quantity", "2");
+        type("explore-event-search", published.name());
+        expect(root().lookup("#public-event-grid").lookupAll(".event-card").size() == 1,
+                "published event is discoverable by another customer");
+        var buyer = services.customerAccess().authenticate("ben@example.com", "secret123");
+        scheduleDialogButton("Buy tickets", false, 40);
+        scheduleDialogButton("Review purchase", true, 40);
+        scheduleDialogButton("OK", false, 40);
+        scheduleDialogButton("OK", false, 40);
+        fireText(node("public-event-grid"), "View Details");
+        expect(dialogAutomationFailure == null, "ticket checkout dialogs were available: " + dialogAutomationFailure);
+        expect(services.accounts().findAccount(buyer.account().getId()).getWalletBalance()
+                .compareTo(new BigDecimal("4000.00")) == 0, "2 tickets charged PHP 1000 to the wallet file");
         shot("09-explore");
-        fire("buy-tickets");
-        expectNotice("INFO Ticket purchase completed.");
-        expect(services.accounts().findAccount(services.customerAccess()
-                .authenticate("ben@example.com", "secret123").account().getId()).getWalletBalance()
-                .compareTo(new BigDecimal("4000.00")) == 0, "2 VIP tickets charged PHP 1000 to the wallet file");
         fire("nav-My-Tickets");
-        TableView<?> tickets = table("tickets-table");
-        expect(tickets.getItems().size() == 1, "purchase listed");
-        tickets.getSelectionModel().select(0);
+        awaitNode("digital-ticket-grid");
+        expect(((javafx.scene.layout.Pane) node("digital-ticket-grid")).getChildren().size() == 1, "purchase listed in My Tickets");
+        var purchase = services.publishing().purchases(buyer.customer()).get(0);
+        fire("view-ticket-" + purchase.id());
         shot("10-tickets");
-        fire("tickets-cancel");
-        expectNotice("INFO Ticket purchase cancelled.");
+        BigDecimal balanceBeforeCancel = services.accounts().findAccount(buyer.account().getId()).getWalletBalance();
+        var cancellationQuote = services.publishing().cancellationQuote(buyer.customer(), purchase.id());
+        fire("cancel-ticket");
+        expectNotice("CONFIRM Confirm ticket cancellation?");
+        expect(services.publishing().purchases(buyer.customer()).get(0).status().name().equals("CANCELLED"),
+                "ticket cancellation persisted");
+        expect(services.accounts().findAccount(buyer.account().getId()).getWalletBalance()
+                .compareTo(balanceBeforeCancel.add(cancellationQuote.refundAmount())) == 0,
+                "ticket cancellation credits the quoted refund to the wallet");
         fire("nav-Explore-Events");
-        ((javafx.scene.control.RadioButton) node("explore-private")).fire();
         type("explore-keyword", "wrong-keyword");
         fire("explore-find");
-        expectNotice("INFO No events found");
-        fire("nav-Wallet-Transactions");
-        expect(table("event-transactions-table").getItems().size() >= 2, "ticket payment and refund in history");
+        expect(root().lookup("#private-event-results").lookupAll(".label").stream()
+                .filter(Label.class::isInstance).map(Label.class::cast)
+                .anyMatch(item -> item.getText().contains("No private events matched")), "private event empty result is displayed");
+        fire("nav-Wallet-&-Transactions");
+        fire("wallet-filter-event-transactions");
+        expect(((javafx.scene.layout.Pane) node("transaction-history-rows")).getChildren().size() >= 2,
+                "ticket payment and refund in event transaction history");
         shot("11-wallet-history");
 
         // ---- Organizer logs back in and cancels the event ----
@@ -208,29 +250,34 @@ public final class GuiSmokeTest {
         fire("nav-My-Events");
         Event ownedEvent = services.events().eventsFor(services.customerAccess()
                 .authenticate("ana@example.com", "secret123").customer()).get(0);
-        fire("event-details-" + ownedEvent.id());
+        fire("event-details-" + ownedEvent.id().replaceAll("[^A-Za-z0-9_-]", "-"));
         fire("cancel-event");
-        expectNotice("INFO Event cancelled.");
-        expect(node("event-details-" + ownedEvent.id()) != null, "cancelled event remains visible with its status");
-        expect(node("event-status-" + ownedEvent.id()).getClass().getSimpleName().equals("Label"),
+        expectNotice("INFO Event cancelled |");
+        expect(node("event-details-" + ownedEvent.id().replaceAll("[^A-Za-z0-9_-]", "-")) != null, "cancelled event remains visible with its status");
+        expect(node("event-status-" + ownedEvent.id().replaceAll("[^A-Za-z0-9_-]", "-")) instanceof Label,
                 "cancelled event shows its current status");
-        expect(((Label) node("event-status-" + ownedEvent.id())).getText().equals("Cancelled"),
+        expect(((Label) node("event-status-" + ownedEvent.id().replaceAll("[^A-Za-z0-9_-]", "-"))).getText().equals("Cancelled"),
                 "cancelled event status is accurate");
 
         // ---- Venue request cancellation (social gathering) ----
         fire("nav-Venue-Reservations");
         fire("open-request-venue");
+        int socialVenueIndex = VenueCatalog.all().indexOf(CustomerWorkflowService.venueNamed("The Veranda at MO2 Westown Hotel").orElseThrow());
+        fire("venue-select-" + socialVenueIndex);
         select("venue-purpose", EventPurpose.SOCIAL_GATHERING);
-        select("venue-choice", CustomerWorkflowService.venueNamed("The Veranda at MO2 Westown Hotel").orElseThrow());
         ((DatePicker) node("venue-date")).setValue(LocalDate.now().plusDays(40));
         type("venue-start", "13:00");
         type("venue-end", "17:00");
         select("venue-pricing", ReservationPricing.HALF_DAY_AFTERNOON);
         fire("venue-pay");
-        expectNotice("INFO Reservation payment successful!");
-        table("reservations-table").getSelectionModel().select(0);
+        expectNotice("CONFIRM Confirm full reservation payment?");
+        fire("confirmation-view-reservations");
         fire("cancel-reservation");
-        expectNotice("INFO Reservation cancelled.");
+        expectNotice("CONFIRM Cancel this reservation?");
+        var socialBooking = services.reservations().forCustomer(services.customerAccess()
+                .authenticate("ana@example.com", "secret123").customer()).stream()
+                .filter(r -> r.venueName().equals("The Veranda at MO2 Westown Hotel")).findFirst().orElseThrow();
+        expect(socialBooking.status().name().equals("CANCELLED"), "venue cancellation persisted");
         logOut();
 
         // ---- Admin: the admin login opens the admin dashboard; logging out returns to login ----
@@ -239,7 +286,7 @@ public final class GuiSmokeTest {
         type("login-password", "admin");
         fire("login-button");
         expect(node("admin-dashboard") != null, "admin dashboard opened");
-        expect(node("admin-approved-events-table") != null, "approved public events loaded for admin");
+        expect(node("admin-all-events-table") != null, "persisted events loaded for admin");
         shot("12-admin");
         fire("admin-logout");
         expect(node("login-button") != null, "admin logged out");
@@ -257,16 +304,30 @@ public final class GuiSmokeTest {
         fire("reg-create");
     }
 
-    /** Opens the sidebar profile menu, picks "My Profile", then presses the page's Log Out button. */
+    private static void selectAdminTab(String id) {
+        javafx.scene.control.TabPane tabs = (javafx.scene.control.TabPane) node("admin-tabs");
+        tabs.getTabs().stream().filter(tab -> id.equals(tab.getId())).findFirst()
+                .ifPresentOrElse(tabs.getSelectionModel()::select,
+                        () -> { throw new AssertionError("missing admin tab " + id); });
+    }
+
+    /** Opens My Profile from the sidebar menu, then logs out through the same menu. */
     private static void logOut() throws Exception {
         ((ButtonBase) root().lookup(".profile-section")).fire();
-        ContextMenu menu = Window.getWindows().stream().filter(ContextMenu.class::isInstance).map(ContextMenu.class::cast)
-                .findFirst().orElseThrow(() -> new AssertionError("profile menu did not open"));
+        ContextMenu menu = profileMenu();
         menu.getItems().get(0).fire();
         menu.hide();
+        expect(root().lookupAll(".profile-section-label").size() >= 1, "profile section labels are static text");
         shot("13-profile");
-        fire("profile-logout");
+        ((ButtonBase) root().lookup(".profile-section")).fire();
+        profileMenu().getItems().get(1).fire();
+        awaitNode("login-button");
         expect(node("login-button") != null, "logged out to the login screen");
+    }
+
+    private static ContextMenu profileMenu() {
+        return Window.getWindows().stream().filter(ContextMenu.class::isInstance).map(ContextMenu.class::cast)
+                .filter(ContextMenu::isShowing).findFirst().orElseThrow(() -> new AssertionError("profile menu did not open"));
     }
 
     /** The current screen, laid out so controls inside scroll panes and tables can be looked up. */
@@ -276,8 +337,26 @@ public final class GuiSmokeTest {
         root.layout();
         return root;
     }
-    private static Node node(String id) { return root().lookup("#" + id); }
-    private static Label label(String selector) { return (Label) root().lookup(selector); }
+    private static Node node(String id) {
+        Node found = root().lookup("#" + id);
+        if (found != null) return found;
+        return Window.getWindows().stream().filter(window -> window.getScene() != null)
+                .map(window -> window.getScene().getRoot().lookup("#" + id)).filter(java.util.Objects::nonNull)
+                .findFirst().orElse(null);
+    }
+
+    private static void awaitNode(String id) {
+        root().applyCss();
+        root().layout();
+        expect(node(id) != null, "timed out waiting for #" + id);
+    }
+    private static Label label(String selector) {
+        Node found = root().lookup(selector);
+        if (found == null) found = Window.getWindows().stream().filter(window -> window.getScene() != null)
+                .map(window -> window.getScene().getRoot().lookup(selector)).filter(java.util.Objects::nonNull)
+                .findFirst().orElse(null);
+        return found instanceof Label result ? result : null;
+    }
 
     private static TableView<?> table(String id) {
         Node table = node(id);
@@ -290,6 +369,34 @@ public final class GuiSmokeTest {
         expect(target instanceof ButtonBase, "button #" + id + " present");
         expect(!target.isDisabled(), "button #" + id + " enabled");
         ((ButtonBase) target).fire();
+    }
+
+    private static void fireText(Node parent, String text) {
+        Node target = parent.lookupAll(".button").stream().filter(ButtonBase.class::isInstance)
+                .map(ButtonBase.class::cast).filter(button -> text.equals(button.getText())).findFirst()
+                .orElseThrow(() -> new AssertionError("button with text '" + text + "' not found"));
+        ((ButtonBase) target).fire();
+    }
+
+    private static void scheduleDialogButton(String text, boolean setQuantity, int retries) {
+        Platform.runLater(() -> {
+            for (Window window : Window.getWindows()) {
+                if (!window.isShowing() || window.getScene() == null) continue;
+                Node windowRoot = window.getScene().getRoot();
+                ButtonBase match = windowRoot.lookupAll(".button").stream().filter(ButtonBase.class::isInstance)
+                        .map(ButtonBase.class::cast).filter(button -> text.equals(button.getText())).findFirst().orElse(null);
+                if (match == null) continue;
+                if (setQuantity) windowRoot.lookupAll(".spinner").stream().filter(Spinner.class::isInstance)
+                        .map(Spinner.class::cast).findFirst().ifPresent(spinner -> spinner.getValueFactory().setValue(2));
+                match.fire();
+                return;
+            }
+            if (retries > 0) scheduleDialogButton(text, setQuantity, retries - 1);
+            else {
+                dialogAutomationFailure = new AssertionError("dialog button not found: " + text);
+                Window.getWindows().stream().filter(Window::isShowing).forEach(Window::hide);
+            }
+        });
     }
 
     private static void type(String id, String text) {

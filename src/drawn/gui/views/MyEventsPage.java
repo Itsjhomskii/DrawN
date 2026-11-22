@@ -280,10 +280,11 @@ final class MyEventsPage {
         };
         VBox summary = Ui.card(Ui.section("Time extension request"), Ui.details(
                 "Requested end", CustomerText.time(request.requestedEndTime()),
-                "Added fee", Ui.php(request.additionalCost()), "Status", state));
+                "Estimated added fee", Ui.php(request.additionalCost()), "Status", state),
+                Ui.muted("Extension payment is not configured. Approval updates the schedule without charging the wallet."));
         if (!request.decisionReason().isBlank()) summary.getChildren().add(Ui.muted("Reason: " + request.decisionReason()));
         if (request.status() == ExtensionRequestStatus.PENDING)
-            summary.getChildren().add(Ui.muted("No additional amount has been charged while this request is pending."));
+            summary.getChildren().add(Ui.muted("The request is awaiting administrator review."));
         return summary;
     }
 
@@ -298,8 +299,8 @@ final class MyEventsPage {
             LocalTime requestedEnd = Ui.time(input, "New end time");
             VenueExtensionRequest request = shell.services().venueExtensions()
                     .request(shell.session().customer(), event.id(), requestedEnd);
-            Ui.info("Extension request submitted", "Additional fee: " + Ui.php(request.additionalCost())
-                    + ". It will not be charged until administrator approval.");
+            Ui.info("Extension request submitted", "Estimated added fee: " + Ui.php(request.additionalCost())
+                    + ". Extension billing is not configured, so approval will update the schedule without charging your wallet.");
             shell.showPage(MainShell.MY_EVENTS);
         } catch (Exception ex) {
             Ui.error("Could not request time extension", Ui.message(ex));

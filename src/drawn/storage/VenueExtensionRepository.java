@@ -101,8 +101,7 @@ public final class VenueExtensionRepository {
     }
 
     private void write(List<String> rows) throws IOException {
-        Files.createDirectories(file.getParent());
-        Files.write(file, rows, StandardCharsets.UTF_8);
+        AtomicCsvFile.write(file, rows);
     }
 
     private static String encode(VenueExtensionRequest request) {

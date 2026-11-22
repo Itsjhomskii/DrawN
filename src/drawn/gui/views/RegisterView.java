@@ -31,10 +31,14 @@ public final class RegisterView {
         Label error = AuthenticationFormSupport.errorLabel();
         TextField first = AuthenticationFormSupport.textField("First name");
         first.setId("auth-first-field");
+        first.setId("reg-first");
         TextField last = AuthenticationFormSupport.textField("Last name");
+        last.setId("reg-last");
         first.setMaxWidth(Double.MAX_VALUE); last.setMaxWidth(Double.MAX_VALUE);
         TextField contact = AuthenticationFormSupport.textField("Email address");
+        contact.setId("reg-contact");
         PasswordInput password = AuthenticationFormSupport.passwordField("Password");
+        password.setInputId("reg-password");
         HBox contactInput = AuthenticationFormSupport.iconField("fi fi-rr-envelope", contact);
         DashboardIcon contactIcon = (DashboardIcon) contactInput.getChildren().get(0);
         Label contactLabel = AuthenticationFormSupport.fieldLabel("Email address");
@@ -42,7 +46,9 @@ public final class RegisterView {
         countryCode.setVisible(false); countryCode.setManaged(false);
         contactInput.getChildren().add(1, countryCode);
         DatePicker dob = new DatePicker(); dob.setPromptText("Date of birth"); dob.getStyleClass().add("text-input");
+        dob.setId("reg-dob");
         TextField funding = AuthenticationFormSupport.textField("Minimum ₱500");
+        funding.setId("reg-funding");
         ToggleGroup contactMethod = new ToggleGroup();
         DashboardIcon emailIcon = new DashboardIcon("fi fi-rs-check-circle", 18);
         DashboardIcon phoneIcon = new DashboardIcon("fi fi-rs-circle", 18);
@@ -68,7 +74,7 @@ public final class RegisterView {
             contactIcon.setIconClass("fi fi-rr-envelope");
             countryCode.setVisible(false); countryCode.setManaged(false);
         });
-        Button create = new Button("Create Account"); create.setMaxWidth(Double.MAX_VALUE); create.getStyleClass().addAll("primary-button", "auth-submit-button");
+        Button create = new Button("Create Account"); create.setId("reg-create"); create.setMaxWidth(Double.MAX_VALUE); create.getStyleClass().addAll("primary-button", "auth-submit-button");
         create.setOnAction(e -> submit(first,last,dob,email.isSelected() ? ContactMethod.EMAIL : ContactMethod.PHONE,contact,password,funding,error));
         Hyperlink back = new Hyperlink("Already have an account? Log-in");
         back.setMaxWidth(Double.MAX_VALUE); back.setAlignment(Pos.CENTER);

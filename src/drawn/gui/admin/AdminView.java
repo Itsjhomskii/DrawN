@@ -1,6 +1,7 @@
 package drawn.gui.admin;
 
 import drawn.model.event.Event;
+import drawn.model.event.EventApprovalStatus;
 import drawn.service.admin.AdminDashboardService;
 import drawn.service.admin.VenueService;
 import javafx.beans.property.ReadOnlyStringWrapper;
@@ -25,11 +26,9 @@ import javafx.scene.layout.VBox;
 import java.util.List;
 import java.util.function.Function;
 
-/** Admin dashboard: approved event submissions, the venue catalog, and the AdminDashboardService tabs. */
+/** Admin dashboard for persisted events, the venue catalog, and AdminDashboardService workflows. */
 public final class AdminView {
     public interface Host {
-        List<Event> approvedPublicEvents() throws Exception;
-        void setRoot(Parent root);
         void logout();
     }
 
@@ -88,22 +87,37 @@ public final class AdminView {
     private Node content() {
         Node approved;
         try {
-            List<Event> publicEvents = app.approvedPublicEvents();
-            TableView<Event> table = table(publicEvents, "No approved public submissions.", "admin-approved-events-table");
+            List<Event> allEvents = dashboard.allEvents();
+            TableView<Event> table = table(allEvents, "No persisted events have been created.", "admin-all-events-table");
             column(table, "Event", Event::name);
+            column(table, "Organizer ID", Event::organizerId);
             column(table, "Type", event -> event.type().name());
             column(table, "Purpose", event -> event.purpose().name());
             column(table, "Visibility", event -> event.visibility().name());
+            column(table, "Status", event -> event.approvalStatus().name());
             column(table, "Schedule", event -> event.date() + " " + event.startTime() + "–" + event.endTime());
             column(table, "Venue", event -> event.venue().name());
-            approved = table;
+            Button approve = new Button("Approve selected event");
+            approve.setId("admin-approve-listed-event");
+            approve.setDisable(true);
+            approve.setOnAction(e -> decideEvent(table, true));
+            Button reject = new Button("Reject selected event");
+            reject.setId("admin-reject-listed-event");
+            reject.setDisable(true);
+            reject.setOnAction(e -> decideEvent(table, false));
+            table.getSelectionModel().selectedItemProperty().addListener((observable, previous, selected) -> {
+                boolean pending = selected != null && selected.approvalStatus() == EventApprovalStatus.PENDING;
+                approve.setDisable(!pending);
+                reject.setDisable(!pending);
+            });
+            approved = new VBox(10, table, new javafx.scene.layout.HBox(10, approve, reject));
         } catch (Exception ex) {
-            Label failure = new Label("Could not load approved public submissions: " + AdminApplication.message(ex));
+            Label failure = new Label("Could not load persisted events: " + AdminApplication.message(ex));
             failure.getStyleClass().add("admin-muted");
             approved = failure;
         }
 
-        VBox body = new VBox(18, heading(), section("Approved public submissions"), approved);
+        VBox body = new VBox(18, heading(), section("Persisted customer events"), approved);
         body.getStyleClass().add("admin-content");
         ScrollWrapper scroll = new ScrollWrapper(body);
         return scroll.node;
@@ -112,9 +126,21 @@ public final class AdminView {
     private Node heading() {
         Label title = new Label("Admin Dashboard");
         title.getStyleClass().add("admin-title");
-        Label subtitle = new Label("Customers create events; review them on Event Approvals. Manage bookable venues on the Venues tab.");
+        Label subtitle = new Label("Persisted events appear here. Review pending submissions on Event Approvals. Manage bookable venues on the Venues tab.");
         subtitle.getStyleClass().add("admin-subtitle");
         return new VBox(4, title, subtitle);
+    }
+
+    private void decideEvent(TableView<Event> table, boolean approve) {
+        Event selected = table.getSelectionModel().getSelectedItem();
+        if (selected == null) return;
+        try {
+            dashboard.reviewEvent(adminId, selected.id(), approve);
+            status.setText((approve ? "Approved event " : "Rejected event ") + selected.name() + ".");
+            refresh();
+        } catch (Exception ex) {
+            status.setText("Could not review event: " + AdminApplication.message(ex));
+        }
     }
 
     static TextField field(String prompt) {

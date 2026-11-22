@@ -6,7 +6,11 @@ DrawN is a Java event listing and ticketing project with a preserved console wor
 
 ## Development status
 
-The console app supports customer registration by email or Philippine phone number, contact-based login, customer event and venue requests, wallet payments, optional event publishing, and ticket sales. The customer menu includes profile, event, venue, ticket, organizer, and wallet features. New workflow data is saved additively under `data/` as CSV files; existing account, wallet, and event-submission CSV formats remain readable. Reservation requests stay pending until the admin-side code calls `ReservationService.approve` or `ReservationService.decline`; `pendingRequests` supplies the review queue. The admin dashboard is unchanged. The existing admin-created event list and simple ticket reservation flow remain available in memory for the current run. Payments are simulated through the customer wallet.
+The console app supports customer registration by email or Philippine phone number, contact-based login, customer event and venue requests, wallet payments, event publishing, and ticket sales. New workflow data is saved under `data/` as CSV files; existing account, wallet, and event-submission CSV formats remain readable. Venue requests stay pending until an administrator approves or declines them. Admin event lists read persisted customer events. Payments are simulated through the customer wallet.
+
+The former session-only admin Add Event and simple ticket reservation controls have been removed. They had no persisted organizer, venue reservation, or wallet payment workflow. Customer-created events remain owned by their customer account and follow the persisted venue and ticket services. The JavaFX admin Events tab lists persisted customer events and only enables approval decisions for pending submissions.
+
+Venue extension review updates the event and venue reservation schedule. An extension fee estimate is shown, but extension billing is not configured; approval does not charge a wallet or create a payment transaction.
 
 Admin login: `admin@drawn.com` / `admin`. Use the main login page for both admins and customers. Customer accounts are created through registration. Customer passwords are currently stored as entered in `data/accounts.csv`.
 
@@ -44,19 +48,24 @@ java -ea -cp "target/classes;target/test-classes" drawn.service.event.Phase34Wor
 java -ea -cp "target/classes;target/test-classes" drawn.service.event.CustomerRecoveryAndEarningsTest
 java -ea -cp "target/classes;target/test-classes" drawn.service.admin.AdminDashboardServiceTest
 java -ea -cp "target/classes;target/test-classes" drawn.service.admin.AdminDashboardFlowTest
+java -ea -cp "target/classes;target/test-classes" drawn.service.admin.VenueServiceTest
+java -ea -cp "target/classes;target/test-classes" drawn.service.customer.CustomerGuiWorkflowTest
+java -ea -cp "target/classes;target/test-classes" drawn.storage.AtomicCsvFileTest
+java -ea -cp "target/classes;target/test-classes" drawn.service.event.VenueExtensionReviewTest
 ```
 
 The admin screen test (approve, decline with refund, every admin tab) needs JavaFX on the module path; add a folder name at the end to save screenshots:
 
 ```powershell
-java -ea --module-path "$env:USERPROFILE\.m2\repository\org\openjfx\javafx-base\21.0.2\javafx-base-21.0.2-win.jar;$env:USERPROFILE\.m2\repository\org\openjfx\javafx-graphics\21.0.2\javafx-graphics-21.0.2-win.jar;$env:USERPROFILE\.m2\repository\org\openjfx\javafx-controls\21.0.2\javafx-controls-21.0.2-win.jar" --add-modules javafx.controls -cp "target/classes;target/test-classes" drawn.gui.admin.AdminViewSmokeTest
+$fx = "$env:USERPROFILE\.m2\repository\org\openjfx\javafx-base\21.0.11\javafx-base-21.0.11-win.jar;$env:USERPROFILE\.m2\repository\org\openjfx\javafx-graphics\21.0.11\javafx-graphics-21.0.11-win.jar;$env:USERPROFILE\.m2\repository\org\openjfx\javafx-controls\21.0.11\javafx-controls-21.0.11-win.jar"
+java -ea --module-path $fx --add-modules javafx.controls -cp "target/classes;target/test-classes" drawn.gui.admin.AdminViewSmokeTest
 ```
 
 These assertion-based checks use temporary data directories and do not write to the project's `data/` CSV files. The organizer commission defaults to 10%. Set the Java system property `drawn.commission.percent` to a value from 0 to 100 to change it, for example `java -Ddrawn.commission.percent=12.5 -cp target/classes drawn.DrawN`.
 
 ## JavaFX GUI
 
-`run-gui.bat` (or `mvn javafx:run`) opens the GUI. It covers every console workflow:
+`run-gui.bat` (or `mvn javafx:run`) opens the GUI. It covers the persisted customer workflows and the admin reservation, event review, venue, extension review, ticket, transaction, revenue, and decision screens:
 
 | GUI screen | Console menu it replaces |
 |---|---|
@@ -69,9 +78,9 @@ These assertion-based checks use temporary data directories and do not write to 
 | My Tickets: buy, cancel with fee summary | Tickets |
 | Wallet & Transactions: top-up, history, records | Wallet & Transactions |
 | My Profile (sidebar profile menu) | My Profile |
-| Admin Dashboard (`src/drawn/gui/admin`): add events, approved public submissions | Admin Dashboard |
+| Admin Dashboard (`src/drawn/gui/admin`): persisted customer events, venue and extension reviews, and admin records | Admin review and venue management |
 
-The GUI lives in `src/drawn/gui` and only calls existing services. The customer screens use `drawn.service.customer.CustomerWorkflowService`; the admin screen uses `drawn.service.admin.AdminService`.
+The GUI lives in `src/drawn/gui` and delegates work to customer, event, payment, venue, and admin services. The JavaFX screen does not create admin-owned events; the project does not define an organizer, venue payment, or ticket ownership policy for those records.
 
 ### Venue details preview data
 
@@ -79,9 +88,10 @@ The Venue Details screen uses clearly labeled fictional demo ratings and reviews
 
 The Wallet & Transactions page calculates totals from the signed-in account's existing wallet transaction ledger. Top-ups include `INITIAL_FUNDING` and `TOP_UP`; gross spending sums recorded `PAYMENT:` entries; refunds sum recorded `REFUND:` entries and are shown separately. The `Pending` filter replaces the separate venue-reservations filter and groups reservation records with their current approval and payment statuses.
 
-The GUI smoke test clicks through every screen against a temporary data folder (your `data/` is not touched). Pass a folder to also save a screenshot of each page:
+The GUI smoke tests use temporary data folders (your `data/` is not touched). Pass a folder to `GuiSmokeTest` or `AdminViewSmokeTest` to also save screenshots:
 
 ```powershell
 .\mvnw.cmd test-compile
-java -ea --module-path "$env:USERPROFILE\.m2\repository\org\openjfx\javafx-base\21.0.2\javafx-base-21.0.2-win.jar;$env:USERPROFILE\.m2\repository\org\openjfx\javafx-graphics\21.0.2\javafx-graphics-21.0.2-win.jar;$env:USERPROFILE\.m2\repository\org\openjfx\javafx-controls\21.0.2\javafx-controls-21.0.2-win.jar" --add-modules javafx.controls -cp "target/classes;target/test-classes" drawn.gui.GuiSmokeTest screenshots
+java -ea --module-path $fx --add-modules javafx.controls -cp "target/classes;target/test-classes" drawn.gui.GuiSmokeTest screenshots
+java -ea --module-path $fx --add-modules javafx.controls -cp "target/classes;target/test-classes" drawn.gui.views.CustomerPlanSmokeTest
 ```

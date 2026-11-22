@@ -30,7 +30,6 @@ import java.io.ByteArrayOutputStream;
 import java.nio.file.Path;
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
-import java.util.ArrayList;
 import java.util.Base64;
 import java.util.List;
 import java.util.Scanner;
@@ -41,7 +40,6 @@ public final class DrawN {
     private static final String ADMIN_PASSWORD = "admin";
 
     private final Scanner input = new Scanner(System.in);
-    final List<LegacyEvent> events = new ArrayList<>();
     final AccountStore accounts = new AccountStore(Path.of("data"));
     private final CustomerAccessService customerAccess = new CustomerAccessService(accounts);
     final EventRepository eventRepository = new EventRepository(Path.of("data"));
@@ -382,14 +380,12 @@ public final class DrawN {
         boolean inMenu = true;
         while (inMenu) {
             printSectionHeader("Admin Dashboard");
-            printMenuItem("1", "List events");
-            printMenuItem("2", "Add event");
+            printMenuItem("1", "List persisted customer events");
             printMenuItem("0", "Log out");
-            int choice = readInt("Choose an option: ", 0, 2);
+            int choice = readInt("Choose an option: ", 0, 1);
 
             switch (choice) {
                 case 1 -> listEvents();
-                case 2 -> addEvent();
                 case 0 -> inMenu = false;
                 default -> throw new IllegalStateException("Unexpected menu option");
             }
@@ -405,74 +401,19 @@ public final class DrawN {
         }
     }
 
-    private void addEvent() {
-        printSectionHeader("Add Event");
-        String name = readRequiredText("Event name: ");
-        String date = readRequiredText("Date (for example, 2026-12-31): ");
-        int capacity = readInt("Ticket capacity: ", 1, Integer.MAX_VALUE);
-        BigDecimal price = readPrice("Ticket price (PHP): ");
-        events.add(new LegacyEvent(name, date, capacity, price));
-        System.out.println("Event added.");
-    }
-
     private void listEvents() {
-        System.out.println("\nAvailable events");
-        boolean found = !events.isEmpty();
-        for (int i = 0; i < events.size(); i++) {
-            LegacyEvent event = events.get(i);
-            System.out.printf("%d. %s | %s | PHP %s | %d tickets left%n",
-                    i + 1, event.name, event.date, event.price.toPlainString(), event.remaining);
-        }
+        System.out.println("\nPersisted customer events");
         try {
-            List<Event> approvedPublic = eventService.publicApprovedEvents();
-            for (Event event : approvedPublic) {
-                found = true;
-                System.out.printf("%s | %s | %s | %s | %s %s–%s | %s%n", event.name(), event.type(),
-                        event.purpose(), event.visibility(), event.date(), event.startTime(), event.endTime(),
-                        event.venue().name());
+            List<Event> persisted = eventService.allEvents();
+            for (Event event : persisted) {
+                System.out.printf("%s | organizer %s | %s | %s | %s | %s %s–%s | %s%n", event.name(),
+                        event.organizerId(), event.approvalStatus(), event.purpose(), event.visibility(),
+                        event.date(), event.startTime(), event.endTime(), event.venue().name());
             }
+            if (persisted.isEmpty()) System.out.println("No persisted events have been created.");
         } catch (IOException ex) {
-            System.out.println("Could not load approved public submissions: " + ex.getMessage());
+            System.out.println("Could not load persisted customer events: " + ex.getMessage());
         }
-        if (!found) {
-            System.out.println("No events yet. Ask an admin to add one.");
-        }
-    }
-
-    private void reserveTickets() {
-        if (events.isEmpty()) {
-            System.out.println("There are no events to reserve yet.");
-            return;
-        }
-
-        System.out.println("\nAvailable in-memory events");
-        for (int i = 0; i < events.size(); i++) {
-            LegacyEvent available = events.get(i);
-            System.out.printf("Event %d%n", i + 1);
-            System.out.println("  Name: " + available.name);
-            System.out.println("  Date: " + available.date);
-            System.out.println("  Ticket price: PHP " + available.price.toPlainString());
-            System.out.println("  Tickets remaining: " + available.remaining);
-            System.out.println("----------------------------------------");
-        }
-        int eventNumber = readInt("Choose an event number (0 to cancel): ", 0, events.size());
-        if (eventNumber == 0) {
-            return;
-        }
-
-        LegacyEvent event = events.get(eventNumber - 1);
-        if (event.remaining == 0) {
-            System.out.println("That event is sold out.");
-            return;
-        }
-
-        String customerName = readRequiredText("Your name: ");
-        int quantity = readInt("Number of tickets: ", 1, event.remaining);
-        event.remaining -= quantity;
-        BigDecimal total = event.price.multiply(BigDecimal.valueOf(quantity));
-        System.out.printf("Reserved %d ticket(s) for %s. Total: PHP %s.%n",
-                quantity, customerName, total.toPlainString());
-        System.out.println("Payment verification is not available in this starter version.");
     }
 
     void printBrandBanner() {
@@ -547,17 +488,4 @@ public final class DrawN {
         return console == null ? input.nextLine() : console.readLine();
     }
 
-    static final class LegacyEvent {
-        final String name;
-        final String date;
-        final BigDecimal price;
-        int remaining;
-
-        LegacyEvent(String name, String date, int capacity, BigDecimal price) {
-            this.name = name;
-            this.date = date;
-            this.price = price;
-            this.remaining = capacity;
-        }
-    }
 }

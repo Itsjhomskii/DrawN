@@ -296,9 +296,7 @@
 .profile-avatar { -fx-min-width: 76; -fx-min-height: 76; -fx-pref-width: 76; -fx-pref-height: 76; -fx-background-radius: 40; -fx-border-color: #FFFFFF; -fx-border-width: 5; -fx-border-radius: 40; -fx-effect: dropshadow(gaussian, rgba(32,38,34,0.12), 8, 0.08, 0, 2); }
 .profile-stat-value { -fx-font-size: 20px; -fx-font-weight: 700; }
 .profile-stat-label { -fx-font-size: 11px; -fx-text-fill: #78837C; }
-.profile-tabs { -fx-padding: 12 20; -fx-background-color: #E7E7FB; -fx-background-radius: 10; }
-.profile-tab { -fx-padding: 4 10; -fx-text-fill: #46504B; }
-.profile-tab-active { -fx-text-fill: #5B5CE2; -fx-font-weight: 700; -fx-border-color: transparent transparent #5B5CE2 transparent; -fx-border-width: 0 0 2 0; }
+.profile-section-label { -fx-padding: 4 0 0 2; -fx-text-fill: #46504B; -fx-font-weight: 700; }
 .create-event-button {
     -fx-background-color: #E5EEE5;
     -fx-text-fill: #355642;

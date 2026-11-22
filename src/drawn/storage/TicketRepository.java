@@ -159,7 +159,7 @@ public final class TicketRepository {
         for(int i=1;i<raw.size();i++){if(raw.get(i).isBlank())continue;List<String> f=parse(raw.get(i));if(f.size()!=7)throw new IOException("Invalid ticket purchase record.");f.add(TicketPurchaseStatus.ACTIVE.name());migrated.add(csv(f.toArray(String[]::new)));}
         return migrated;
     }
-    private static void write(Path p,List<String> rows)throws IOException{Files.createDirectories(p.getParent());Files.write(p,rows,StandardCharsets.UTF_8);}
+    private static void write(Path p,List<String> rows)throws IOException{AtomicCsvFile.write(p,rows);}
     private static String csv(String...f){return java.util.Arrays.stream(f).map(v->"\""+v.replace("\"","\"\"")+"\"").collect(Collectors.joining(","));}
     private static List<String> parse(String s)throws IOException{List<String> f=new ArrayList<>();StringBuilder b=new StringBuilder();boolean q=false;for(int i=0;i<s.length();i++){char c=s.charAt(i);if(q&&c=='"'&&i+1<s.length()&&s.charAt(i+1)=='"'){b.append('"');i++;}else if(c=='"')q=!q;else if(c==','&&!q){f.add(b.toString());b.setLength(0);}else b.append(c);}if(q)throw new IOException("Malformed CSV.");f.add(b.toString());return f;}
     private static LocalDateTime safeDate(String value) {

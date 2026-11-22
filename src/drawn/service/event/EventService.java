@@ -4,6 +4,7 @@ import drawn.model.event.Event;
 import drawn.model.event.EventApprovalStatus;
 import drawn.model.event.EventDraft;
 import drawn.model.event.EventPurpose;
+import drawn.model.event.ReservationPricing;
 import drawn.model.event.TicketCategory;
 import drawn.model.event.VenueCatalog;
 import drawn.model.event.VenueReservation;
@@ -20,6 +21,7 @@ import java.io.IOException;
 import java.time.Clock;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.LocalTime;
 import java.time.Period;
 import java.util.HashSet;
 import java.util.List;
@@ -354,6 +356,40 @@ public final class EventService {
 
     public List<Event> eventsFor(Customer customer) throws IOException {
         return repository.findByOrganizer(customer.getId());
+    }
+
+    /** All persisted customer events for read-only administration screens. */
+    public List<Event> allEvents() throws IOException {
+        return repository.findAll();
+    }
+
+    /** Applies the schedule portion of an approved venue extension. Extension billing is not defined yet. */
+    public Event extendPublishedEvent(String eventId, LocalTime newEndTime) throws IOException {
+        Event event = repository.findAll().stream().filter(candidate -> candidate.id().equals(eventId)).findFirst()
+                .orElseThrow(() -> new IllegalArgumentException("Event not found."));
+        if (event.approvalStatus() != EventApprovalStatus.PUBLISHED)
+            throw new IllegalArgumentException("Only a published event can be extended.");
+        if (!event.date().atTime(event.startTime()).isAfter(LocalDateTime.now(clock))
+                || newEndTime == null || !newEndTime.isAfter(event.endTime()))
+            throw new IllegalArgumentException("The event extension must end later before the event starts.");
+        ReservationService.validatePricing(event.endTime(), newEndTime, ReservationPricing.HOURLY);
+        if (reservations != null)
+            new ReservationService(repository, reservations, clock).ensureScheduleAvailable(event.venue().name(),
+                    event.date(), event.startTime(), newEndTime, repository.reservationId(event.id()));
+        Event updated = new Event(event.id(), event.organizerId(), event.name(), event.description(), event.type(),
+                event.purpose(), event.visibility(), event.date(), event.startTime(), newEndTime,
+                event.expectedAttendance(), event.venue(), event.approvalStatus(), event.submittedAt(), event.ticketCategories());
+        repository.save(updated);
+        return updated;
+    }
+
+    void restorePublishedEventEndTime(String eventId, LocalTime originalEndTime) throws IOException {
+        Event event = repository.findAll().stream().filter(candidate -> candidate.id().equals(eventId)).findFirst()
+                .orElseThrow(() -> new IllegalArgumentException("Event not found."));
+        Event restored = new Event(event.id(), event.organizerId(), event.name(), event.description(), event.type(),
+                event.purpose(), event.visibility(), event.date(), event.startTime(), originalEndTime,
+                event.expectedAttendance(), event.venue(), event.approvalStatus(), event.submittedAt(), event.ticketCategories());
+        repository.save(restored);
     }
 
     public long pendingCountFor(Customer customer) throws IOException {

@@ -560,8 +560,8 @@ final class CustomerMenuPages {
         hero.getStyleClass().add("profile-hero-content");
         VBox heroCard = new VBox(banner, hero);
         heroCard.getStyleClass().add("profile-hero-card");
-        HBox tabs = new HBox(22, profileTab("Profile", true), profileTab("Account", false), profileTab("Activity", false));
-        tabs.getStyleClass().add("profile-tabs");
+        Label profileSection = new Label("Profile details");
+        profileSection.getStyleClass().add("profile-section-label");
         VBox details = new VBox(12, Ui.section("Personal information"), Ui.details("Account ID", customer.getId(),
                 "Email", nullText(customer.getEmail()),
                 "Phone", nullText(customer.getPhoneNumber()),
@@ -569,7 +569,7 @@ final class CustomerMenuPages {
                 "Contact preference", CustomerText.words(customer.getContactMethod())));
         details.getStyleClass().add("profile-card");
         VBox content = new VBox(14, title("My Profile"), body("Your DrawN identity, account details, and event activity."),
-                heroCard, tabs, details);
+                heroCard, profileSection, details);
         return pageFrame("My Profile", content);
     }
 
@@ -579,13 +579,6 @@ final class CustomerMenuPages {
         Label caption = new Label(label);
         caption.getStyleClass().add("profile-stat-label");
         return new VBox(3, amount, caption);
-    }
-
-    private static Label profileTab(String text, boolean active) {
-        Label tab = new Label(text);
-        tab.getStyleClass().add("profile-tab");
-        if (active) tab.getStyleClass().add("profile-tab-active");
-        return tab;
     }
 
     private Node eventCard(Event event, boolean owned) {

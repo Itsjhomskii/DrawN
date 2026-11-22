@@ -31,6 +31,7 @@ final class DashboardNavigation {
         button.getStyleClass().add("sidebar-item");
         button.setTooltip(new Tooltip(item.label()));
         button.setAccessibleText(item.label());
+        button.setId("nav-" + item.label().replace(' ', '-'));
         button.setOnAction(event -> navigate.accept(item.label()));
         return button;
     }

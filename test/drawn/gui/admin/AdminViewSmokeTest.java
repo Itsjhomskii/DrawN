@@ -2,6 +2,10 @@ package drawn.gui.admin;
 
 import drawn.gui.AppServices;
 import drawn.model.event.ReservationPricing;
+import drawn.model.event.EventDraft;
+import drawn.model.event.EventPurpose;
+import drawn.model.event.EventType;
+import drawn.model.event.EventVisibility;
 import drawn.model.event.Venue;
 import drawn.model.event.VenueCatalog;
 import drawn.model.event.VenueType;
@@ -65,10 +69,27 @@ public final class AdminViewSmokeTest {
                 LocalTime.of(9, 0), LocalTime.of(11, 0), ReservationPricing.HOURLY);
         services.venueWorkflow().requestAndPay(owner.customer(), owner.account(), venue, date,
                 LocalTime.of(14, 0), LocalTime.of(16, 0), ReservationPricing.HOURLY);
+        LocalDate extensionDate = date.plusDays(2);
+        var extensionBooking = services.venueWorkflow().requestAndPay(owner.customer(), owner.account(), venue,
+                extensionDate, LocalTime.of(9, 0), LocalTime.of(11, 0), ReservationPricing.HOURLY);
+        services.reservations().approve(extensionBooking.id());
+        var extensionEvent = services.eventCreationService().create(owner.customer(),
+                new EventDraft("Extension review event", "A persisted event for the admin review screen.",
+                        EventType.OTHER, EventPurpose.SOCIAL_GATHERING, EventVisibility.PUBLIC, extensionDate,
+                        LocalTime.of(9, 0), LocalTime.of(11, 0), 20, venue, null), extensionBooking.id(), "");
+        services.venueExtensions().request(owner.customer(), extensionEvent.id(), LocalTime.of(12, 0));
+        LocalDate pendingDate = extensionDate.plusDays(2);
+        var pendingBooking = services.venueWorkflow().requestAndPay(owner.customer(), owner.account(), venue,
+                pendingDate, LocalTime.of(9, 0), LocalTime.of(11, 0), ReservationPricing.HOURLY);
+        services.reservations().approve(pendingBooking.id());
+        var pendingDraft = services.events().saveDraftForReservation(owner.customer(),
+                new EventDraft("Pending event review", "A pending customer submission for admin review.",
+                        EventType.OTHER, EventPurpose.SOCIAL_GATHERING, EventVisibility.PUBLIC, pendingDate,
+                        LocalTime.of(9, 0), LocalTime.of(11, 0), 20, venue, null), pendingBooking.id());
+        services.reservations().attachEvent(owner.customer(), pendingBooking.id(), pendingDraft.id());
+        var pendingEvent = services.events().submitDraft(owner.customer(), pendingDraft.id());
 
         AdminView view = new AdminView(new AdminView.Host() {
-            @Override public List<drawn.model.event.Event> approvedPublicEvents() throws Exception { return services.events().publicApprovedEvents(); }
-            @Override public void setRoot(Parent root) { scene.setRoot(root); }
             @Override public void logout() { }
         }, services.adminDashboard(), services.venues(), "admin@drawn.com");
         scene = new Scene(view.view(), 1280, 820);
@@ -93,16 +114,70 @@ public final class AdminViewSmokeTest {
         expect(status().startsWith("Declined ") && status().contains("REFUNDED"), "decline message: " + status());
         expect(table("admin-venue-requests").getItems().isEmpty(), "queue empty after both decisions");
 
+        openTab("admin-tab-extension-requests");
+        expect(table("admin-extension-requests").getItems().size() == 1, "extension request listed");
+        shot("02-extension-requests");
+        BigDecimal balanceBeforeExtension = services.accounts().findAccount(owner.account().getId()).getWalletBalance();
+        table("admin-extension-requests").getSelectionModel().select(0);
+        fire("admin-approve-extension");
+        expect(status().startsWith("Approved the schedule extension"), "extension approval message: " + status());
+        expect(table("admin-extension-requests").getItems().isEmpty(), "approved extension left the queue");
+        expect(services.events().allEvents().stream().filter(e -> e.id().equals(extensionEvent.id()))
+                .findFirst().orElseThrow().endTime().equals(LocalTime.of(12, 0)), "event schedule extended");
+        expect(services.reservations().find(extensionBooking.id()).endTime().equals(LocalTime.of(12, 0)),
+                "reservation schedule extended");
+        expect(services.accounts().findAccount(owner.account().getId()).getWalletBalance()
+                .compareTo(balanceBeforeExtension) == 0, "extension estimate does not charge without a billing policy");
+
+        openTab("admin-tab-events");
+        @SuppressWarnings("unchecked") TableView<drawn.model.event.Event> allEvents =
+                (TableView<drawn.model.event.Event>) table("admin-all-events-table");
+        expect(allEvents.getItems().stream().anyMatch(e -> e.id().equals(extensionEvent.id())),
+                "persisted published event listed");
+        allEvents.getSelectionModel().select(allEvents.getItems().stream()
+                .filter(e -> e.id().equals(extensionEvent.id())).findFirst().orElseThrow());
+        expect(node("admin-approve-listed-event").isDisabled(), "already published events cannot be reviewed again");
+        allEvents.getSelectionModel().select(allEvents.getItems().stream()
+                .filter(e -> e.id().equals(pendingEvent.id())).findFirst().orElseThrow());
+        expect(!node("admin-approve-listed-event").isDisabled(), "pending persisted events can be reviewed");
+        fire("admin-approve-listed-event");
+        expect(services.events().allEvents().stream().filter(e -> e.id().equals(pendingEvent.id()))
+                .findFirst().orElseThrow().approvalStatus().name().equals("APPROVED"), "pending event approval persisted");
+        expect(scene.getRoot().lookup("#admin-add-event") == null, "session-only admin Add Event control removed");
+
         openTab("admin-tab-transactions");
         expect(table("admin-transactions").getItems().size() >= 4, "payments and refund listed");
+        TextField customerFilter = (TextField) node("admin-transaction-customer-id");
+        customerFilter.setText(owner.account().getId());
+        @SuppressWarnings("unchecked") javafx.scene.control.ComboBox<drawn.model.payment.PaymentPurpose> purpose =
+                (javafx.scene.control.ComboBox<drawn.model.payment.PaymentPurpose>) node("admin-transaction-purpose");
+        purpose.setValue(drawn.model.payment.PaymentPurpose.VENUE_BOOKING);
+        fire("admin-transaction-apply");
+        expect(!table("admin-transactions").getItems().isEmpty(), "transaction filters return matching rows");
+        @SuppressWarnings("unchecked") TableView<drawn.service.admin.AdminDashboardService.TransactionRow> transactions =
+                (TableView<drawn.service.admin.AdminDashboardService.TransactionRow>) table("admin-transactions");
+        expect(transactions.getItems().stream().allMatch(row ->
+                row.customerId().equals(owner.account().getId()) && row.purpose() == drawn.model.payment.PaymentPurpose.VENUE_BOOKING),
+                "transaction customer and purpose filters applied");
+        customerFilter.setText("missing-customer");
+        fire("admin-transaction-apply");
+        expect(table("admin-transactions").getItems().isEmpty(), "empty filter result shown");
+        fire("admin-transaction-clear");
+        expect(table("admin-transactions").getItems().size() >= 4, "clearing filters restores all transactions");
         shot("02-transactions");
         openTab("admin-tab-revenue");
         expect(((Label) node("admin-revenue-refunds")).getText().startsWith("PHP "), "refund total shown");
         shot("03-revenue");
         openTab("admin-tab-decisions");
-        expect(table("admin-decisions").getItems().size() == 2, "both decisions recorded");
-        shot("04-decisions");
+        expect(table("admin-decisions").getItems().size() == 4, "venue, extension, and event decisions recorded");
+        shot("05-decisions");
         openTab("admin-tab-ticket-purchases");
+        expect(table("admin-ticket-purchases").getItems().isEmpty(), "ticket table starts empty");
+        ((TextField) node("admin-ticket-event-id")).setText("missing-event");
+        fire("admin-ticket-apply");
+        expect(table("admin-ticket-purchases").getItems().isEmpty(), "ticket filters show an empty result");
+        fire("admin-ticket-clear");
+        expect(table("admin-ticket-purchases").getItems().isEmpty(), "clearing ticket filters restores all rows");
         openTab("admin-tab-event-approvals");
         openTab("admin-tab-unfinished-operations");
         expect(table("admin-unfinished").getItems().isEmpty(), "no unfinished operations");
@@ -114,7 +189,7 @@ public final class AdminViewSmokeTest {
         expect(status().startsWith("Added Test Garden"), "add venue message: " + status());
         expect(table("admin-venues-table").getItems().size() == venueCount + 1, "new venue listed");
         expect(VenueCatalog.all().stream().anyMatch(v -> v.name().equals("Test Garden")), "organizers can book the new venue");
-        shot("05-venues");
+        shot("06-venues");
 
         fillVenueForm("Bad Rate", "Garden", "50", "abc", "5000.00");
         fire("admin-add-venue");

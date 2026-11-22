@@ -4,6 +4,8 @@ import drawn.model.event.Venue;
 import drawn.model.event.VenueCatalog;
 import drawn.model.event.VenueType;
 import drawn.model.payment.PaymentStatus;
+import drawn.model.payment.PaymentPurpose;
+import drawn.model.ticket.TicketPurchaseStatus;
 import drawn.service.admin.AdminAuditLog;
 import drawn.service.admin.AdminDashboardService;
 import drawn.service.admin.VenueService;
@@ -11,6 +13,7 @@ import drawn.storage.TransactionJournal;
 import javafx.scene.Node;
 import javafx.scene.control.Button;
 import javafx.scene.control.ComboBox;
+import javafx.scene.control.DatePicker;
 import javafx.scene.control.Label;
 import javafx.scene.control.Tab;
 import javafx.scene.control.TableView;
@@ -22,6 +25,8 @@ import javafx.scene.layout.VBox;
 import javafx.util.StringConverter;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.List;
 
 import static drawn.gui.admin.AdminView.column;
@@ -52,6 +57,7 @@ final class AdminOperationsTabs {
 
     List<Tab> tabs() {
         return List.of(tab("Venues", this::venues), tab("Venue Requests", this::venueRequests), tab("Event Approvals", this::eventApprovals),
+                tab("Extension Requests", this::extensions),
                 tab("Ticket Purchases", this::tickets), tab("Transactions", this::transactions),
                 tab("Revenue", this::revenue), tab("Decisions", this::decisions),
                 tab("Unfinished Operations", this::unfinished));
@@ -183,6 +189,36 @@ final class AdminOperationsTabs {
         return page("Customer-submitted events. This is separate from venue approval.", table, new HBox(10, approve, reject));
     }
 
+    private Node extensions() throws Exception {
+        TableView<AdminDashboardService.PendingExtension> table = table(dashboard.pendingExtensions(),
+                "No venue extension requests are waiting.", "admin-extension-requests");
+        column(table, "Event", AdminDashboardService.PendingExtension::eventName);
+        column(table, "Reservation ID", AdminDashboardService.PendingExtension::reservationId);
+        column(table, "Customer", AdminDashboardService.PendingExtension::customerName);
+        column(table, "Venue", AdminDashboardService.PendingExtension::venueName);
+        column(table, "Date", r -> String.valueOf(r.date()));
+        column(table, "Original schedule", r -> r.startTime() + "–" + r.currentEndTime());
+        column(table, "Requested schedule", r -> r.startTime() + "–" + r.requestedEndTime());
+        column(table, "Status", r -> r.status().name());
+        column(table, "Estimated fee", r -> php(r.estimatedAdditionalCost()));
+
+        TextField reason = field("Decline reason (required to decline)");
+        reason.setId("admin-extension-decline-reason");
+        Button approve = primary("Approve schedule extension", "admin-approve-extension", () -> {
+            var selected = selected(table);
+            dashboard.approveExtension(adminId, selected.requestId());
+            return "Approved the schedule extension for " + selected.eventName()
+                    + ". No additional payment was collected; extension billing is not configured.";
+        });
+        Button decline = secondary("Decline extension", "admin-decline-extension", () -> {
+            var selected = selected(table);
+            dashboard.declineExtension(adminId, selected.requestId(), reason.getText());
+            return "Declined the extension for " + selected.eventName() + ".";
+        });
+        return page("Approval updates the event and venue schedule. The displayed fee is an estimate; no extension payment policy is configured, so this action does not charge the wallet.",
+                table, new HBox(10, reason, approve, decline));
+    }
+
     private Node tickets() throws Exception {
         TableView<AdminDashboardService.TicketRow> purchases = table(dashboard.tickets(AdminDashboardService.TicketFilter.ALL),
                 "No ticket purchases yet.", "admin-ticket-purchases");
@@ -194,6 +230,35 @@ final class AdminOperationsTabs {
         column(purchases, "Amount", t -> php(t.amount()));
         column(purchases, "Status", t -> t.status().name());
         column(purchases, "Purchase ID", AdminDashboardService.TicketRow::purchaseId);
+        ComboBox<TicketPurchaseStatus> status = new ComboBox<>();
+        status.setId("admin-ticket-status");
+        status.setPromptText("All statuses");
+        status.getItems().addAll(TicketPurchaseStatus.values());
+        status.setConverter(new StringConverter<>() {
+            @Override public String toString(TicketPurchaseStatus value) { return value == null ? "" : value.name(); }
+            @Override public TicketPurchaseStatus fromString(String value) { return null; }
+        });
+        TextField eventId = inputField("Event ID (optional)", "admin-ticket-event-id");
+        TextField customerId = inputField("Customer ID (optional)", "admin-ticket-customer-id");
+        DatePicker from = new DatePicker(); from.setId("admin-ticket-from"); from.setPromptText("From date");
+        DatePicker to = new DatePicker(); to.setId("admin-ticket-to"); to.setPromptText("To date");
+        Button apply = filterButton("Apply filters", "admin-ticket-apply", () -> {
+            LocalDate start = from.getValue(); LocalDate end = to.getValue();
+            validateDateRange(start, end);
+            var filter = new AdminDashboardService.TicketFilter(blankToNull(eventId.getText()),
+                    blankToNull(customerId.getText()), status.getValue(), startOfDay(start), endOfDay(end));
+            purchases.getItems().setAll(dashboard.tickets(filter));
+            return "Ticket filters applied.";
+        });
+        Button clear = filterButton("Clear", "admin-ticket-clear", () -> {
+            eventId.clear(); customerId.clear(); status.setValue(null); from.setValue(null); to.setValue(null);
+            purchases.getItems().setAll(dashboard.tickets(AdminDashboardService.TicketFilter.ALL));
+            return "Ticket filters cleared.";
+        });
+        GridPane filterForm = filtersGrid(
+                new String[]{"Event ID", "Customer ID", "Status", "From", "To"},
+                new Node[]{eventId, customerId, status, from, to});
+        HBox filterActions = new HBox(8, apply, clear);
         TableView<AdminDashboardService.EventTicketSummary> summary = table(dashboard.ticketSummary(),
                 "No tickets sold yet.", "admin-ticket-summary");
         column(summary, "Event", AdminDashboardService.EventTicketSummary::eventName);
@@ -201,7 +266,8 @@ final class AdminOperationsTabs {
         column(summary, "Cancelled", s -> String.valueOf(s.cancelled()));
         column(summary, "Remaining", s -> String.valueOf(s.remaining()));
         column(summary, "Active amount", s -> php(s.activeAmount()));
-        return page("Every ticket purchase with its customer and event.", purchases, section("Per event"), summary);
+        return page("Every ticket purchase with its customer and event. Filters use event and customer IDs and the recorded purchase date.",
+                filterForm, filterActions, purchases, section("Per event"), summary);
     }
 
     private Node transactions() throws Exception {
@@ -215,8 +281,55 @@ final class AdminOperationsTabs {
         column(table, "Related", t -> t.related().isBlank() ? "—" : t.related());
         column(table, "Reference", t -> t.referenceId().isBlank() ? "—" : t.referenceId());
         column(table, "Source", AdminDashboardService.TransactionRow::source);
+        TextField customerId = inputField("Customer ID (optional)", "admin-transaction-customer-id");
+        ComboBox<PaymentPurpose> purpose = new ComboBox<>();
+        purpose.setId("admin-transaction-purpose"); purpose.setPromptText("All purposes");
+        purpose.getItems().addAll(PaymentPurpose.values());
+        purpose.setConverter(new StringConverter<>() {
+            @Override public String toString(PaymentPurpose value) { return value == null ? "" : value.name(); }
+            @Override public PaymentPurpose fromString(String value) { return null; }
+        });
+        DatePicker from = new DatePicker(); from.setId("admin-transaction-from"); from.setPromptText("From date");
+        DatePicker to = new DatePicker(); to.setId("admin-transaction-to"); to.setPromptText("To date");
+        Button apply = filterButton("Apply filters", "admin-transaction-apply", () -> {
+            LocalDate start = from.getValue(); LocalDate end = to.getValue();
+            validateDateRange(start, end);
+            var filter = new AdminDashboardService.TransactionFilter(blankToNull(customerId.getText()),
+                    purpose.getValue(), startOfDay(start), endOfDay(end));
+            table.getItems().setAll(dashboard.transactions(filter));
+            return "Transaction filters applied.";
+        });
+        Button clear = filterButton("Clear", "admin-transaction-clear", () -> {
+            customerId.clear(); purpose.setValue(null); from.setValue(null); to.setValue(null);
+            table.getItems().setAll(dashboard.transactions(AdminDashboardService.TransactionFilter.ALL));
+            return "Transaction filters cleared.";
+        });
+        GridPane filterForm = filtersGrid(new String[]{"Customer ID", "Purpose", "From", "To"},
+                new Node[]{customerId, purpose, from, to});
+        HBox filterActions = new HBox(8, apply, clear);
         return page("Payments and wallet activity. A charge recorded in both the wallet and the payment ledger is shown once;"
-                + " refunds are separate rows.", table);
+                + " refunds are separate rows. Customer ID, purpose, and purchase date filters are supported.",
+                filterForm, filterActions, table);
+    }
+
+    private static GridPane filtersGrid(String[] labels, Node[] controls) {
+        GridPane grid = new GridPane(); grid.setHgap(10); grid.setVgap(8);
+        for (int i = 0; i < controls.length; i++) {
+            grid.add(label(labels[i]), i, 0);
+            grid.add(controls[i], i, 1);
+            GridPane.setHgrow(controls[i], Priority.ALWAYS);
+        }
+        return grid;
+    }
+
+    private static String blankToNull(String value) { return value == null || value.isBlank() ? null : value.trim(); }
+    private static LocalDateTime startOfDay(LocalDate value) { return value == null ? null : value.atStartOfDay(); }
+    private static LocalDateTime endOfDay(LocalDate value) {
+        return value == null ? null : value.plusDays(1).atStartOfDay().minusNanos(1);
+    }
+    private static void validateDateRange(LocalDate from, LocalDate to) {
+        if (from != null && to != null && to.isBefore(from))
+            throw new IllegalArgumentException("To date must be on or after From date.");
     }
 
     private Node revenue() throws Exception {
@@ -279,6 +392,16 @@ final class AdminOperationsTabs {
 
     private Button primary(String text, String id, Decision decision) { return button(text, id, "admin-primary", decision); }
     private Button secondary(String text, String id, Decision decision) { return button(text, id, "admin-secondary", decision); }
+
+    private Button filterButton(String text, String id, Decision decision) {
+        Button button = new Button(text);
+        button.setId(id); button.getStyleClass().add("admin-secondary");
+        button.setOnAction(e -> {
+            try { show(decision.run(), false); }
+            catch (Exception ex) { show(AdminApplication.message(ex), true); }
+        });
+        return button;
+    }
 
     private Button button(String text, String id, String style, Decision decision) {
         Button button = new Button(text);

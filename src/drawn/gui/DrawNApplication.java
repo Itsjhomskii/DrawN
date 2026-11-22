@@ -4,7 +4,6 @@ import drawn.gui.admin.AdminView;
 import drawn.gui.views.LoginView;
 import drawn.gui.views.MainShell;
 import drawn.gui.views.RegisterView;
-import drawn.model.event.Event;
 import drawn.service.admin.AdminService;
 import javafx.animation.FadeTransition;
 import javafx.animation.Interpolator;
@@ -19,7 +18,6 @@ import javafx.stage.Stage;
 
 import java.io.IOException;
 import java.nio.file.Path;
-import java.util.List;
 import javafx.util.Duration;
 
 /** JavaFX customer entry point. The console application remains drawn.DrawN. */
@@ -53,6 +51,11 @@ public final class DrawNApplication extends Application {
 
     private void switchAuthForm(Parent nextRoot, boolean toRegister) {
         if (scene == null) { setRootForView(nextRoot); focusFirstField(nextRoot); return; }
+        if (Boolean.getBoolean("drawn.gui.smoke")) {
+            setRootForView(nextRoot);
+            focusFirstField(nextRoot);
+            return;
+        }
         if (authTransitionRunning) return;
         Node oldCard = findById(scene.getRoot(), "auth-form-card");
         Node newCard = findById(nextRoot, "auth-form-card");
@@ -88,6 +91,8 @@ public final class DrawNApplication extends Application {
 
     private static void focusFirstField(Parent root) {
         Node first = findById(root, "auth-first-field");
+        if (first == null) first = findById(root, "login-contact");
+        if (first == null) first = findById(root, "reg-first");
         if (first != null) javafx.application.Platform.runLater(first::requestFocus);
     }
 
@@ -107,8 +112,6 @@ public final class DrawNApplication extends Application {
         if (!AdminService.isAdminLogin(email, password)) return false;
         session.clear();
         setRootForView(new AdminView(new AdminView.Host() {
-            @Override public List<Event> approvedPublicEvents() throws IOException { return services.events().publicApprovedEvents(); }
-            @Override public void setRoot(Parent root) { setRootForView(root); }
             @Override public void logout() { showLogin(); }
         }, services.adminDashboard(), services.venues(), email.trim()).view());
         String adminCss = getClass().getResource("/drawn/gui/admin/admin.css").toExternalForm();

@@ -27,7 +27,9 @@ public final class LoginView {
         Label error = AuthenticationFormSupport.errorLabel();
         TextField contact = AuthenticationFormSupport.textField("Email address or 10-digit phone number");
         contact.setId("auth-first-field");
+        contact.setId("login-contact");
         PasswordInput password = AuthenticationFormSupport.passwordField("Password");
+        password.setInputId("login-password");
         HBox contactInput = AuthenticationFormSupport.iconField("fi fi-rr-envelope", contact);
         DashboardIcon contactIcon = (DashboardIcon) contactInput.getChildren().get(0);
         Label countryCode = new Label("+63  |");
@@ -44,8 +46,9 @@ public final class LoginView {
             contactLabel.setText(phone ? "Phone number" : "Email address");
             contact.setPromptText(phone ? "Phone Number" : "Email address or phone number");
         });
-        Button login = new Button("Log In"); login.getStyleClass().addAll("primary-button", "auth-submit-button"); login.setMaxWidth(Double.MAX_VALUE);
+        Button login = new Button("Log In"); login.setId("login-button"); login.getStyleClass().addAll("primary-button", "auth-submit-button"); login.setMaxWidth(Double.MAX_VALUE);
         Hyperlink register = new Hyperlink("Don't Have an account? Register");
+        register.setId("login-register");
         register.setMaxWidth(Double.MAX_VALUE);
         register.setAlignment(Pos.CENTER);
         register.setOnAction(event -> app.showRegister());

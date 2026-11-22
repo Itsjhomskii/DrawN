@@ -20,7 +20,6 @@ import drawn.service.payment.CommissionPolicy;
 import drawn.service.event.EventService;
 import drawn.storage.AccountStore;
 import drawn.storage.TicketRepository;
-import drawn.DrawN.LegacyEvent;
 
 import java.math.BigDecimal;
 import java.io.IOException;
@@ -211,19 +210,9 @@ final class CustomerEventsConsole extends CustomerConsoleModule {
     private void listCustomerEvents() {
         System.out.println("\nAvailable events");
         boolean found = false;
-        for (int i = 0; i < host.events.size(); i++) {
-            LegacyEvent event = host.events.get(i);
-            found = true;
-            System.out.printf("Event %d%n", i + 1);
-            System.out.println("  Name: " + event.name);
-            System.out.println("  Date: " + event.date);
-            System.out.println("  Ticket price: PHP " + event.price.toPlainString());
-            System.out.println("  Tickets remaining: " + event.remaining);
-            System.out.println("----------------------------------------");
-        }
         try {
-        List<Event> approved = host.publishingService.publishedEvents();
-            for (Event event : approved) {
+            List<Event> published = host.publishingService.publishedEvents();
+            for (Event event : published) {
                 found = true;
                 host.printEventDetails(event);
             }

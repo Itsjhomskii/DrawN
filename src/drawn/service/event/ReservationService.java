@@ -80,6 +80,34 @@ public final class ReservationService {
         return reservations.findAll().stream().filter(r -> r.status() == BookingStatus.PENDING).toList();
     }
     public VenueReservation find(String id) throws IOException { return reservations.findById(id); }
+    /** Updates an already-approved paid booking after an extension decision; no extra payment is collected. */
+    public synchronized VenueReservation extendApprovedReservation(String reservationId, LocalTime newEndTime)
+            throws IOException {
+        VenueReservation current = reservations.findById(reservationId);
+        if (current.status() != BookingStatus.APPROVED && current.status() != BookingStatus.CONFIRMED
+                && current.status() != BookingStatus.RESERVED)
+            throw new IllegalArgumentException("Only an approved reservation can be extended.");
+        if (current.paymentStatus() != PaymentStatus.PAID && current.paymentStatus() != PaymentStatus.VERIFIED)
+            throw new IllegalArgumentException("The reservation must be fully paid before it can be extended.");
+        if (newEndTime == null || !newEndTime.isAfter(current.endTime()))
+            throw new IllegalArgumentException("The extension must end later than the current reservation.");
+        validatePricing(current.endTime(), newEndTime, ReservationPricing.HOURLY);
+        ensureScheduleAvailable(current.venueName(), current.date(), current.startTime(), newEndTime, current.id());
+        VenueReservation updated = new VenueReservation(current.id(), current.eventId(), current.organizerId(),
+                current.venueName(), current.date(), current.startTime(), newEndTime, current.pricing(), current.cost(),
+                current.status(), current.paymentStatus(), current.declineReason());
+        reservations.update(updated);
+        return updated;
+    }
+
+    synchronized void restoreApprovedReservationEndTime(String reservationId, LocalTime originalEndTime)
+            throws IOException {
+        VenueReservation current = reservations.findById(reservationId);
+        VenueReservation restored = new VenueReservation(current.id(), current.eventId(), current.organizerId(),
+                current.venueName(), current.date(), current.startTime(), originalEndTime, current.pricing(),
+                current.cost(), current.status(), current.paymentStatus(), current.declineReason());
+        reservations.update(restored);
+    }
     public void attachEvent(Customer customer, String reservationId, String eventId) throws IOException {
         reservations.attachEvent(reservationId, eventId, customer.getId());
     }

@@ -92,8 +92,7 @@ public final class ReservationRepository {
         return rows;
     }
     private void write(List<String> rows) throws IOException {
-        Files.createDirectories(file.getParent());
-        Files.write(file, rows, StandardCharsets.UTF_8);
+        AtomicCsvFile.write(file, rows);
     }
     private static int find(List<String> rows, String id) throws IOException {
         for (int i = 1; i < rows.size(); i++) if (!rows.get(i).isBlank() && parse(rows.get(i)).get(0).equals(id)) return i;
