@@ -2,7 +2,7 @@ package drawn.gui.admin;
 
 import drawn.model.event.Event;
 import drawn.service.admin.AdminDashboardService;
-import drawn.service.admin.AdminService;
+import drawn.service.admin.VenueService;
 import javafx.beans.property.ReadOnlyStringWrapper;
 import javafx.collections.FXCollections;
 import javafx.geometry.Insets;
@@ -17,17 +17,15 @@ import javafx.scene.control.TableColumn;
 import javafx.scene.control.TableView;
 import javafx.scene.control.TextField;
 import javafx.scene.layout.BorderPane;
-import javafx.scene.layout.GridPane;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
 import javafx.scene.layout.Region;
 import javafx.scene.layout.VBox;
 
-import java.math.BigDecimal;
 import java.util.List;
 import java.util.function.Function;
 
-/** Admin dashboard: session-only events plus AdminDashboardService tabs (approvals, tickets, money, history). */
+/** Admin dashboard: approved event submissions, the venue catalog, and the AdminDashboardService tabs. */
 public final class AdminView {
     public interface Host {
         List<Event> approvedPublicEvents() throws Exception;
@@ -36,17 +34,17 @@ public final class AdminView {
     }
 
     private final Host app;
-    private final AdminService admin;
     private final AdminDashboardService dashboard;
+    private final VenueService venues;
     private final String adminId;
     private final BorderPane root = new BorderPane();
     private final Label status = new Label();
     private TabPane tabs;
 
-    public AdminView(Host app, AdminService admin, AdminDashboardService dashboard, String adminId) {
+    public AdminView(Host app, AdminDashboardService dashboard, VenueService venues, String adminId) {
         this.app = app;
-        this.admin = admin;
         this.dashboard = dashboard;
+        this.venues = venues;
         this.adminId = adminId;
         status.setId("admin-status");
         status.setWrapText(true);
@@ -80,7 +78,7 @@ public final class AdminView {
         Tab events = new Tab("Events", content());
         events.setId("admin-tab-events");
         tabs.getTabs().add(events);
-        tabs.getTabs().addAll(new AdminOperationsTabs(dashboard, adminId, status, this::refresh).tabs());
+        tabs.getTabs().addAll(new AdminOperationsTabs(dashboard, venues, adminId, status, this::refresh).tabs());
         tabs.getSelectionModel().select(Math.max(0, selected));
         VBox center = new VBox(status, tabs);
         VBox.setVgrow(tabs, Priority.ALWAYS);
@@ -88,13 +86,6 @@ public final class AdminView {
     }
 
     private Node content() {
-        List<AdminService.LegacyEvent> added = admin.events();
-        TableView<AdminService.LegacyEvent> addedTable = table(added, "No admin-created events yet.", "admin-events-table");
-        column(addedTable, "Event", AdminService.LegacyEvent::name);
-        column(addedTable, "Date", AdminService.LegacyEvent::date);
-        column(addedTable, "Ticket price", event -> "PHP " + event.price().toPlainString());
-        column(addedTable, "Tickets left", event -> String.valueOf(event.remaining()));
-
         Node approved;
         try {
             List<Event> publicEvents = app.approvedPublicEvents();
@@ -112,10 +103,8 @@ public final class AdminView {
             approved = failure;
         }
 
-        VBox body = new VBox(18, heading(), addForm(), section("Admin-created events"), addedTable,
-                section("Approved public submissions"), approved);
+        VBox body = new VBox(18, heading(), section("Approved public submissions"), approved);
         body.getStyleClass().add("admin-content");
-        VBox.setVgrow(addedTable, Priority.SOMETIMES);
         ScrollWrapper scroll = new ScrollWrapper(body);
         return scroll.node;
     }
@@ -123,49 +112,9 @@ public final class AdminView {
     private Node heading() {
         Label title = new Label("Admin Dashboard");
         title.getStyleClass().add("admin-title");
-        Label subtitle = new Label("Admin-created events last for this session only.");
+        Label subtitle = new Label("Customers create events; review them on Event Approvals. Manage bookable venues on the Venues tab.");
         subtitle.getStyleClass().add("admin-subtitle");
         return new VBox(4, title, subtitle);
-    }
-
-    private Node addForm() {
-        TextField name = field("Event name"); name.setId("admin-name");
-        TextField date = field("Date (for example, 2026-12-31)"); date.setId("admin-date");
-        TextField capacity = field("Ticket capacity"); capacity.setId("admin-capacity");
-        TextField price = field("Ticket price (PHP)"); price.setId("admin-price");
-        GridPane form = new GridPane();
-        form.setHgap(14); form.setVgap(10);
-        form.add(label("Event name"), 0, 0); form.add(name, 1, 0);
-        form.add(label("Date"), 0, 1); form.add(date, 1, 1);
-        form.add(label("Ticket capacity"), 0, 2); form.add(capacity, 1, 2);
-        form.add(label("Ticket price (PHP)"), 0, 3); form.add(price, 1, 3);
-        for (Node node : form.getChildren()) if (node instanceof TextField field) GridPane.setHgrow(field, Priority.ALWAYS);
-        Button add = new Button("Add event");
-        add.setId("admin-add"); add.getStyleClass().add("admin-primary");
-        add.setOnAction(event -> add(name, date, capacity, price));
-        VBox card = new VBox(14, section("Add event"), form, add);
-        card.getStyleClass().add("admin-card");
-        return card;
-    }
-
-    private void add(TextField name, TextField date, TextField capacity, TextField price) {
-        try {
-            String eventName = required(name.getText(), "Event name");
-            String eventDate = required(date.getText(), "Date");
-            int tickets = Integer.parseInt(required(capacity.getText(), "Ticket capacity"));
-            if (tickets < 1) throw new IllegalArgumentException("Ticket capacity must be at least 1.");
-            BigDecimal ticketPrice = new BigDecimal(required(price.getText(), "Ticket price"));
-            admin.addEvent(eventName, eventDate, tickets, ticketPrice);
-            AlertSupport.info("Event added", eventName + " was added to the admin event list.");
-            refresh();
-        } catch (Exception ex) {
-            AdminApplication.error("Could not add event", AdminApplication.message(ex));
-        }
-    }
-
-    private static String required(String text, String field) {
-        if (text == null || text.isBlank()) throw new IllegalArgumentException(field + " is required.");
-        return text.trim();
     }
 
     static TextField field(String prompt) {
@@ -193,13 +142,6 @@ public final class AdminView {
         ScrollWrapper(Node content) {
             node = new javafx.scene.control.ScrollPane(content);
             node.setFitToWidth(true); node.getStyleClass().add("admin-scroll");
-        }
-    }
-
-    private static final class AlertSupport {
-        static void info(String title, String message) {
-            javafx.scene.control.Alert alert = new javafx.scene.control.Alert(javafx.scene.control.Alert.AlertType.INFORMATION);
-            alert.setTitle("DrawN Admin"); alert.setHeaderText(title); alert.setContentText(message); alert.showAndWait();
         }
     }
 }

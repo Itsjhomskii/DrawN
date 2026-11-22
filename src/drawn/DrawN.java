@@ -4,6 +4,8 @@ import drawn.model.user.ContactMethod;
 import drawn.model.user.Customer;
 import drawn.model.event.Event;
 import drawn.model.event.TicketCategory;
+import drawn.model.event.VenueCatalog;
+import drawn.storage.VenueRepository;
 import drawn.service.event.ReservationService;
 import drawn.service.event.EventPublishingService;
 import drawn.service.event.EventCancellationService;
@@ -76,6 +78,7 @@ public final class DrawN {
 
     private void run() {
         try {
+            VenueCatalog.replaceWith(new VenueRepository(Path.of("data")).load());
             paymentService.recoverPending();
             publishingService.recoverPending();
             cancellationService.recoverPending();

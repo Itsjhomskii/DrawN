@@ -6,7 +6,6 @@ import drawn.model.event.Venue;
 import drawn.model.event.VenueCatalog;
 import drawn.model.event.VenueType;
 import drawn.model.user.ContactMethod;
-import drawn.service.admin.AdminService;
 import javafx.application.Platform;
 import javafx.scene.Node;
 import javafx.scene.Parent;
@@ -71,7 +70,7 @@ public final class AdminViewSmokeTest {
             @Override public List<drawn.model.event.Event> approvedPublicEvents() throws Exception { return services.events().publicApprovedEvents(); }
             @Override public void setRoot(Parent root) { scene.setRoot(root); }
             @Override public void logout() { }
-        }, new AdminService(), services.adminDashboard(), "admin@drawn.com");
+        }, services.adminDashboard(), services.venues(), "admin@drawn.com");
         scene = new Scene(view.view(), 1280, 820);
         scene.getStylesheets().add(AdminView.class.getResource("/drawn/gui/admin/admin.css").toExternalForm());
         Stage stage = new Stage();
@@ -107,6 +106,28 @@ public final class AdminViewSmokeTest {
         openTab("admin-tab-event-approvals");
         openTab("admin-tab-unfinished-operations");
         expect(table("admin-unfinished").getItems().isEmpty(), "no unfinished operations");
+
+        openTab("admin-tab-venues");
+        int venueCount = table("admin-venues-table").getItems().size();
+        fillVenueForm("Test Garden", "Garden", "50", "1500.00", "5000.00");
+        fire("admin-add-venue");
+        expect(status().startsWith("Added Test Garden"), "add venue message: " + status());
+        expect(table("admin-venues-table").getItems().size() == venueCount + 1, "new venue listed");
+        expect(VenueCatalog.all().stream().anyMatch(v -> v.name().equals("Test Garden")), "organizers can book the new venue");
+        shot("05-venues");
+
+        fillVenueForm("Bad Rate", "Garden", "50", "abc", "5000.00");
+        fire("admin-add-venue");
+        expect(status().contains("Hourly rate must be a number"), "bad rate refused: " + status());
+
+        selectVenue("Test Garden");
+        fire("admin-remove-venue");
+        expect(status().startsWith("Removed Test Garden"), "remove venue message: " + status());
+        expect(table("admin-venues-table").getItems().size() == venueCount, "removed venue left the list");
+
+        selectVenue(venue.name());
+        fire("admin-remove-venue");
+        expect(status().contains("cannot be removed"), "venue with a live reservation is protected: " + status());
         stage.close();
     }
 
@@ -115,6 +136,21 @@ public final class AdminViewSmokeTest {
         tabs.getTabs().stream().filter(t -> id.equals(t.getId())).findFirst()
                 .ifPresentOrElse(t -> tabs.getSelectionModel().select(t), () -> { throw new AssertionError("missing tab " + id); });
         layout();
+    }
+
+    private static void fillVenueForm(String name, String category, String capacity, String hourly, String halfDay) {
+        ((TextField) node("admin-venue-name")).setText(name);
+        ((TextField) node("admin-venue-category")).setText(category);
+        ((TextField) node("admin-venue-capacity")).setText(capacity);
+        ((TextField) node("admin-venue-hourly")).setText(hourly);
+        ((TextField) node("admin-venue-half-day")).setText(halfDay);
+    }
+
+    @SuppressWarnings("unchecked")
+    private static void selectVenue(String name) {
+        TableView<VenueCatalog.Entry> table = (TableView<VenueCatalog.Entry>) table("admin-venues-table");
+        table.getSelectionModel().select(table.getItems().stream()
+                .filter(entry -> entry.venue().name().equals(name)).findFirst().orElseThrow());
     }
 
     private static void layout() { scene.getRoot().applyCss(); scene.getRoot().layout(); }

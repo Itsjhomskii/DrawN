@@ -1,0 +1,11 @@
+name,category,type,capacity,hourlyRate,morningRate,afternoonRate
+"Seda Atria","Hotel","NON_COMMERCIAL","180","4000.00","14000.00","14000.00"
+"Richmonde Hotel Iloilo","Hotel","BOTH","100","3500.00","12000.00","12000.00"
+"Park Inn by Radisson Iloilo","Hotel","BOTH","120","3000.00","10000.00","10000.00"
+"Courtyard by Marriott Iloilo","Hotel","BOTH","250","5000.00","18000.00","18000.00"
+"Protagonist Cafe and Cocktail Lounge","Bar","COMMERCIAL","60","2000.00","7000.00","7000.00"
+"Muelle Deli and Restaurant, Iloilo City","Restaurant","COMMERCIAL","70","1800.00","6000.00","6000.00"
+"The Veranda at MO2 Westown Hotel","Restaurant","NON_COMMERCIAL","80","2000.00","7000.00","7000.00"
+"Sol y Mar Family Beach Resort","Beach resort","BOTH","150","2500.00","9000.00","9000.00"
+"Solina Beach and Nature Resort","Beach resort","BOTH","250","4500.00","16000.00","16000.00"
+"Iloilo Convention Center (iCon)","Convention","BOTH","3000","12000.00","45000.00","45000.00"

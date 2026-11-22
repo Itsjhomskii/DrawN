@@ -25,7 +25,6 @@ import javafx.util.Duration;
 /** JavaFX customer entry point. The console application remains drawn.DrawN. */
 public final class DrawNApplication extends Application {
     private final AppSession session = new AppSession();
-    private final AdminService adminService = new AdminService();
     private AppServices services;
     private Stage stage;
     private Scene scene;
@@ -111,7 +110,7 @@ public final class DrawNApplication extends Application {
             @Override public List<Event> approvedPublicEvents() throws IOException { return services.events().publicApprovedEvents(); }
             @Override public void setRoot(Parent root) { setRootForView(root); }
             @Override public void logout() { showLogin(); }
-        }, adminService, services.adminDashboard(), email.trim()).view());
+        }, services.adminDashboard(), services.venues(), email.trim()).view());
         String adminCss = getClass().getResource("/drawn/gui/admin/admin.css").toExternalForm();
         if (!scene.getStylesheets().contains(adminCss)) scene.getStylesheets().add(adminCss);
         return true;

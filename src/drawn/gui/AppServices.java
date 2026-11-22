@@ -2,6 +2,7 @@ package drawn.gui;
 
 import drawn.service.admin.AdminAuditLog;
 import drawn.service.admin.AdminDashboardService;
+import drawn.service.admin.VenueService;
 import drawn.service.customer.CustomerAccessService;
 import drawn.service.customer.CustomerWorkflowService;
 import drawn.service.event.EventCancellationService;
@@ -20,8 +21,10 @@ import drawn.storage.ReservationRepository;
 import drawn.storage.TicketRepository;
 import drawn.storage.TransactionJournal;
 import drawn.storage.VenueExtensionRepository;
+import drawn.storage.VenueRepository;
 
 import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.nio.file.Path;
 import java.time.Clock;
 
@@ -40,6 +43,7 @@ public final class AppServices {
     private final drawn.service.customer.CustomerEventCreationService eventCreation;
     private final AdminDashboardService adminDashboard;
     private final VenueExtensionService venueExtensions;
+    private final VenueService venues;
     private final PrivateEventAccessRepository privateAccess;
 
     public AppServices(Path dataDirectory) {
@@ -64,6 +68,11 @@ public final class AppServices {
         venueWorkflow = new drawn.service.customer.CustomerVenueWorkflowService(accounts, reservationRepository, reservations, payment);
         eventCreation = new drawn.service.customer.CustomerEventCreationService(events, publishing, privateAccess);
         venueExtensions = new VenueExtensionService(events, reservations, extensionRepository, Clock.systemDefaultZone());
+        try {
+            venues = new VenueService(new VenueRepository(dataDirectory), reservationRepository, Clock.systemDefaultZone());
+        } catch (IOException ex) {
+            throw new UncheckedIOException("DrawN could not load its venue list.", ex);
+        }
         adminDashboard = new AdminDashboardService(reservations, eventRepository, ticketRepository, paymentRepository,
                 accounts, journal, CommissionPolicy.configured(), new AdminAuditLog(dataDirectory, Clock.systemDefaultZone()), events);
     }
@@ -87,6 +96,7 @@ public final class AppServices {
     public drawn.service.customer.CustomerEventCreationService eventCreationService() { return eventCreation; }
     public AdminDashboardService adminDashboard() { return adminDashboard; }
     public VenueExtensionService venueExtensions() { return venueExtensions; }
+    public VenueService venues() { return venues; }
 
     // Compatibility accessors used by the customer GUI restored from commit 6605d3b.
     public EventService eventService() { return events; }

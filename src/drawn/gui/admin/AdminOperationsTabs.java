@@ -1,11 +1,16 @@
 package drawn.gui.admin;
 
+import drawn.model.event.Venue;
+import drawn.model.event.VenueCatalog;
+import drawn.model.event.VenueType;
 import drawn.model.payment.PaymentStatus;
 import drawn.service.admin.AdminAuditLog;
 import drawn.service.admin.AdminDashboardService;
+import drawn.service.admin.VenueService;
 import drawn.storage.TransactionJournal;
 import javafx.scene.Node;
 import javafx.scene.control.Button;
+import javafx.scene.control.ComboBox;
 import javafx.scene.control.Label;
 import javafx.scene.control.Tab;
 import javafx.scene.control.TableView;
@@ -14,6 +19,7 @@ import javafx.scene.layout.GridPane;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
 import javafx.scene.layout.VBox;
+import javafx.util.StringConverter;
 
 import java.math.BigDecimal;
 import java.util.List;
@@ -25,8 +31,8 @@ import static drawn.gui.admin.AdminView.section;
 import static drawn.gui.admin.AdminView.table;
 
 /**
- * Admin tabs backed by AdminDashboardService: venue and event approvals, ticket purchases, transactions,
- * revenue, recorded decisions and unfinished operations. Every decision goes through the service, reports its
+ * Admin tabs backed by VenueService (the bookable venue catalog) and AdminDashboardService: venue and event
+ * approvals, ticket purchases, transactions, revenue, recorded decisions and unfinished operations. Every action goes through its service, reports its
  * outcome in the shared status line (no blocking pop-ups) and then rebuilds the screen from the CSV data.
  */
 final class AdminOperationsTabs {
@@ -34,19 +40,97 @@ final class AdminOperationsTabs {
     private interface Decision { String run() throws Exception; }
 
     private final AdminDashboardService dashboard;
+    private final VenueService venueService;
     private final String adminId;
     private final Label status;
     private final Runnable refresh;
 
-    AdminOperationsTabs(AdminDashboardService dashboard, String adminId, Label status, Runnable refresh) {
-        this.dashboard = dashboard; this.adminId = adminId; this.status = status; this.refresh = refresh;
+    AdminOperationsTabs(AdminDashboardService dashboard, VenueService venueService, String adminId, Label status, Runnable refresh) {
+        this.dashboard = dashboard; this.venueService = venueService;
+        this.adminId = adminId; this.status = status; this.refresh = refresh;
     }
 
     List<Tab> tabs() {
-        return List.of(tab("Venue Requests", this::venueRequests), tab("Event Approvals", this::eventApprovals),
+        return List.of(tab("Venues", this::venues), tab("Venue Requests", this::venueRequests), tab("Event Approvals", this::eventApprovals),
                 tab("Ticket Purchases", this::tickets), tab("Transactions", this::transactions),
                 tab("Revenue", this::revenue), tab("Decisions", this::decisions),
                 tab("Unfinished Operations", this::unfinished));
+    }
+
+    private Node venues() {
+        TableView<VenueCatalog.Entry> table = table(venueService.venues(), "No venues in the catalog.", "admin-venues-table");
+        column(table, "Venue", entry -> entry.venue().name());
+        column(table, "Category", VenueCatalog.Entry::category);
+        column(table, "Hosts", entry -> purposeLabel(entry.venue().type()));
+        column(table, "Capacity", entry -> String.valueOf(entry.venue().capacity()));
+        column(table, "Hourly rate", entry -> php(entry.venue().hourlyRate()));
+        column(table, "Half-day rate", entry -> php(entry.venue().morningRate()));
+        Button remove = secondary("Remove selected venue", "admin-remove-venue", () -> {
+            Venue venue = selected(table).venue();
+            venueService.remove(venue.name());
+            return "Removed " + venue.name() + " from the venue catalog.";
+        });
+        return page("Venues organizers can request. Changes reach customers immediately and are saved for the next start. "
+                + "A venue with active or upcoming reservations cannot be removed.", addVenueCard(), table, remove);
+    }
+
+    private Node addVenueCard() {
+        TextField name = inputField("Venue name", "admin-venue-name");
+        TextField category = inputField("Category, for example Hotel or Restaurant", "admin-venue-category");
+        TextField capacity = inputField("Capacity (people)", "admin-venue-capacity");
+        TextField hourly = inputField("Hourly rate (PHP)", "admin-venue-hourly");
+        TextField halfDay = inputField("Half-day rate (PHP)", "admin-venue-half-day");
+        ComboBox<VenueType> purpose = new ComboBox<>();
+        purpose.setId("admin-venue-hosts");
+        purpose.getItems().addAll(VenueType.values());
+        purpose.setValue(VenueType.BOTH);
+        purpose.setMaxWidth(Double.MAX_VALUE);
+        purpose.setConverter(new StringConverter<VenueType>() {
+            @Override public String toString(VenueType type) { return type == null ? "" : purposeLabel(type); }
+            @Override public VenueType fromString(String text) { return null; }
+        });
+
+        String[] labels = {"Venue name", "Category", "Hosts", "Capacity", "Hourly rate (PHP)", "Half-day rate (PHP)"};
+        Node[] inputs = {name, category, purpose, capacity, hourly, halfDay};
+        GridPane form = new GridPane();
+        form.setHgap(14); form.setVgap(10);
+        for (int row = 0; row < inputs.length; row++) {
+            form.add(label(labels[row]), 0, row);
+            form.add(inputs[row], 1, row);
+            GridPane.setHgrow(inputs[row], Priority.ALWAYS);
+        }
+        Button add = primary("Add venue", "admin-add-venue", () -> {
+            Venue venue = venueService.add(name.getText(), category.getText(), purpose.getValue(),
+                    whole(capacity, "Capacity"), amount(hourly, "Hourly rate"), amount(halfDay, "Half-day rate"));
+            return "Added " + venue.name() + " to the venue catalog.";
+        });
+        VBox card = new VBox(14, section("Add venue"), form, add);
+        card.getStyleClass().add("admin-card");
+        return card;
+    }
+
+    private static TextField inputField(String prompt, String id) {
+        TextField input = field(prompt);
+        input.setId(id);
+        return input;
+    }
+
+    private static int whole(TextField input, String label) {
+        try { return Integer.parseInt(input.getText().trim()); }
+        catch (NumberFormatException ex) { throw new IllegalArgumentException(label + " must be a whole number."); }
+    }
+
+    private static BigDecimal amount(TextField input, String label) {
+        try { return new BigDecimal(input.getText().trim()); }
+        catch (NumberFormatException ex) { throw new IllegalArgumentException(label + " must be a number."); }
+    }
+
+    private static String purposeLabel(VenueType type) {
+        return switch (type) {
+            case NON_COMMERCIAL -> "Social gatherings";
+            case COMMERCIAL -> "Ticketed events";
+            case BOTH -> "Both";
+        };
     }
 
     private Node venueRequests() throws Exception {

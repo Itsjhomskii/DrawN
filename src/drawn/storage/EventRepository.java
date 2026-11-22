@@ -209,13 +209,13 @@ public final class EventRepository {
         else writeRecords(file, content);
     }
 
-    private static String csv(String... fields) {
+    static String csv(String... fields) {
         return java.util.Arrays.stream(fields)
                 .map(value -> "\"" + value.replace("\"", "\"\"") + "\"")
                 .collect(Collectors.joining(","));
     }
 
-    private static List<String> parseCsv(String line) throws IOException {
+    static List<String> parseCsv(String line) throws IOException {
         List<String> fields = new ArrayList<>();
         StringBuilder field = new StringBuilder();
         boolean quoted = false;
